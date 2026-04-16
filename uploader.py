@@ -2,6 +2,8 @@ import os
 import json
 import sys
 import tempfile
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
@@ -14,6 +16,8 @@ CLIENT_SECRET = os.environ.get('YOUTUBE_CLIENT_SECRET')
 REFRESH_TOKEN = os.environ.get('YOUTUBE_REFRESH_TOKEN')
 DRIVE_FOLDER_ID = os.environ.get('DRIVE_FOLDER_ID')
 SERVICE_ACCOUNT_JSON = os.environ.get('GOOGLE_SERVICE_ACCOUNT')
+ALERT_EMAIL = os.environ.get('ALERT_EMAIL', '')
+ALERT_APP_PASSWORD = os.environ.get('ALERT_APP_PASSWORD', '')
 
 DEFAULT_TAGS = ["shorts", "viral", "trending", "fyp"]
 DEFAULT_DESCRIPTION = """Watch till the end!
@@ -21,6 +25,25 @@ DEFAULT_DESCRIPTION = """Watch till the end!
 Like and Subscribe for more!
 
 #Shorts #Viral #Trending"""
+
+
+def send_alert(subject, message):
+    if not ALERT_EMAIL or not ALERT_APP_PASSWORD:
+        print("No alert email configured, skipping alert")
+        return
+    try:
+        msg = MIMEText(message)
+        msg['Subject'] = f"YouTube Bot: {subject}"
+        msg['From'] = ALERT_EMAIL
+        msg['To'] = ALERT_EMAIL
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(ALERT_EMAIL, ALERT_APP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        print(f"Alert email sent: {subject}")
+    except Exception as e:
+        print(f"Failed to send alert: {e}")
 
 
 def get_drive_service():
@@ -35,17 +58,33 @@ def get_drive_service():
 
 
 def get_youtube_service():
-    creds = Credentials(
-        token=None,
-        refresh_token=REFRESH_TOKEN,
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        token_uri='https://oauth2.googleapis.com/token',
-    )
-    creds.refresh(Request())
-    service = build('youtube', 'v3', credentials=creds)
-    print("YouTube authenticated")
-    return service
+    try:
+        creds = Credentials(
+            token=None,
+            refresh_token=REFRESH_TOKEN,
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            token_uri='https://oauth2.googleapis.com/token',
+        )
+        creds.refresh(Request())
+        service = build('youtube', 'v3', credentials=creds)
+        print("YouTube authenticated")
+        return service
+    except Exception as e:
+        error_msg = str(e)
+        print(f"YouTube auth FAILED: {error_msg}")
+        send_alert(
+            "TOKEN EXPIRED - ACTION NEEDED",
+            f"YouTube refresh token expired!\n\n"
+            f"Error: {error_msg}\n\n"
+            f"Fix steps:\n"
+            f"1. Go to Google Colab\n"
+            f"2. Run the token generation code\n"
+            f"3. Update YOUTUBE_REFRESH_TOKEN in GitHub Secrets\n"
+            f"4. Bot will auto-resume next cycle\n\n"
+            f"Time: {datetime.now()}"
+        )
+        sys.exit(1)
 
 
 def get_pending_folder_id(drive_service):
@@ -101,6 +140,20 @@ def get_next_video(drive_service, pending_folder_id):
     return files[0]
 
 
+def count_pending(drive_service, pending_folder_id):
+    query = (
+        f"'{pending_folder_id}' in parents and "
+        f"trashed = false and "
+        f"(mimeType contains 'video/')"
+    )
+    results = drive_service.files().list(
+        q=query,
+        fields="files(id)",
+        pageSize=1000
+    ).execute()
+    return len(results.get('files', []))
+
+
 def download_video(drive_service, file_info):
     request = drive_service.files().get_media(fileId=file_info['id'])
     temp_dir = tempfile.mkdtemp()
@@ -147,8 +200,9 @@ def upload_to_youtube(youtube_service, video_path, filename):
             print(f"Uploaded {int(status.progress() * 100)}%")
 
     video_id = response['id']
-    print(f"Uploaded: https://youtube.com/shorts/{video_id}")
-    return video_id
+    video_url = f"https://youtube.com/shorts/{video_id}"
+    print(f"Uploaded: {video_url}")
+    return video_id, video_url
 
 
 def move_to_uploaded(drive_service, file_info, pending_folder_id, uploaded_folder_id):
@@ -163,6 +217,7 @@ def move_to_uploaded(drive_service, file_info, pending_folder_id, uploaded_folde
 
 def main():
     print(f"Bot started: {datetime.now()}")
+    print("=" * 50)
 
     required = ['YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET', 'YOUTUBE_REFRESH_TOKEN', 'DRIVE_FOLDER_ID', 'GOOGLE_SERVICE_ACCOUNT']
     missing = [v for v in required if not os.environ.get(v)]
@@ -181,16 +236,43 @@ def main():
     video_info = get_next_video(drive_service, pending_folder_id)
     if not video_info:
         print("No videos to upload. Exiting.")
+        send_alert(
+            "No Videos Left",
+            f"All videos uploaded!\n"
+            f"Add more videos to Drive → YouTubeShorts → pending\n"
+            f"Time: {datetime.now()}"
+        )
         return
 
+    remaining = count_pending(drive_service, pending_folder_id)
+    print(f"Videos in queue: {remaining}")
     print(f"Next video: {video_info['name']}")
+
     temp_path = download_video(drive_service, video_info)
 
     try:
-        video_id = upload_to_youtube(youtube_service, temp_path, video_info['name'])
+        video_id, video_url = upload_to_youtube(youtube_service, temp_path, video_info['name'])
         uploaded_folder_id = get_uploaded_folder_id(drive_service)
         move_to_uploaded(drive_service, video_info, pending_folder_id, uploaded_folder_id)
+
+        print("=" * 50)
         print("SUCCESS!")
+        print(f"Video: {video_info['name']}")
+        print(f"URL: {video_url}")
+        print(f"Remaining: {remaining - 1}")
+        print("=" * 50)
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Upload failed: {error_msg}")
+        send_alert(
+            "Upload Failed",
+            f"Video: {video_info['name']}\n"
+            f"Error: {error_msg}\n"
+            f"Time: {datetime.now()}"
+        )
+        sys.exit(1)
+
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
