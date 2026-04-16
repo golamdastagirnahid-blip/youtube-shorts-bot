@@ -31,4 +31,5 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
           ALERT_APP_PASSWORD: ${{ secrets.ALERT_APP_PASSWORD }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python uploader.py
