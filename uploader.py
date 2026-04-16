@@ -10,6 +10,7 @@ from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from groq import Groq
 
 CLIENT_ID = os.environ.get('YOUTUBE_CLIENT_ID')
 CLIENT_SECRET = os.environ.get('YOUTUBE_CLIENT_SECRET')
@@ -18,18 +19,11 @@ DRIVE_FOLDER_ID = os.environ.get('DRIVE_FOLDER_ID')
 SERVICE_ACCOUNT_JSON = os.environ.get('GOOGLE_SERVICE_ACCOUNT')
 ALERT_EMAIL = os.environ.get('ALERT_EMAIL', '')
 ALERT_APP_PASSWORD = os.environ.get('ALERT_APP_PASSWORD', '')
-
-DEFAULT_TAGS = ["shorts", "viral", "trending", "fyp"]
-DEFAULT_DESCRIPTION = """Watch till the end!
-
-Like and Subscribe for more!
-
-#Shorts #Viral #Trending"""
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
 
 
 def send_alert(subject, message):
     if not ALERT_EMAIL or not ALERT_APP_PASSWORD:
-        print("No alert email configured, skipping alert")
         return
     try:
         msg = MIMEText(message)
@@ -41,9 +35,84 @@ def send_alert(subject, message):
         server.login(ALERT_EMAIL, ALERT_APP_PASSWORD)
         server.send_message(msg)
         server.quit()
-        print(f"Alert email sent: {subject}")
+        print(f"Alert sent: {subject}")
     except Exception as e:
-        print(f"Failed to send alert: {e}")
+        print(f"Alert failed: {e}")
+
+
+def generate_ai_metadata(filename):
+    if not GROQ_API_KEY:
+        print("No Groq API key, using filename as title")
+        return fallback_metadata(filename)
+
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        clean_name = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
+
+        prompt = f"""You are a YouTube Shorts expert. Generate a viral title and description for a Short video.
+
+The video filename is: "{clean_name}"
+
+Rules for TITLE:
+- Must be catchy and clickbait (but not misleading)
+- Use emojis (1-2 max)
+- Keep under 80 characters
+- Must end with #Shorts
+- Make people want to click
+
+Rules for DESCRIPTION:
+- 3-4 lines max
+- Include a call to action (like, subscribe)
+- Add 5-8 relevant hashtags
+- Make it engaging
+
+Respond in EXACTLY this JSON format only, no other text:
+{{"title": "your title here #Shorts", "description": "your description here", "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]}}"""
+
+        response = client.chat.completions.create(
+            model="llama-3.1-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.9,
+            max_tokens=300,
+        )
+
+        result = response.choices[0].message.content.strip()
+
+        # Clean up response
+        if "```json" in result:
+            result = result.split("```json")[1].split("```")[0].strip()
+        elif "```" in result:
+            result = result.split("```")[1].split("```")[0].strip()
+
+        metadata = json.loads(result)
+        title = metadata.get("title", "")
+        description = metadata.get("description", "")
+        tags = metadata.get("tags", [])
+
+        if "#Shorts" not in title:
+            title = f"{title} #Shorts"
+        if len(title) > 100:
+            title = title[:97] + "..."
+
+        print(f"AI Title: {title}")
+        print(f"AI Tags: {', '.join(tags)}")
+        return title, description, tags
+
+    except Exception as e:
+        print(f"AI generation failed: {e}")
+        return fallback_metadata(filename)
+
+
+def fallback_metadata(filename):
+    title = filename.rsplit('.', 1)[0]
+    title = title.replace('_', ' ').replace('-', ' ').title()
+    if "#Shorts" not in title:
+        title = f"{title} #Shorts"
+    if len(title) > 100:
+        title = title[:97] + "..."
+    description = "Watch till the end!\n\nLike and Subscribe!\n\n#Shorts #Viral #Trending"
+    tags = ["shorts", "viral", "trending", "fyp"]
+    return title, description, tags
 
 
 def get_drive_service():
@@ -77,11 +146,7 @@ def get_youtube_service():
             "TOKEN EXPIRED - ACTION NEEDED",
             f"YouTube refresh token expired!\n\n"
             f"Error: {error_msg}\n\n"
-            f"Fix steps:\n"
-            f"1. Go to Google Colab\n"
-            f"2. Run the token generation code\n"
-            f"3. Update YOUTUBE_REFRESH_TOKEN in GitHub Secrets\n"
-            f"4. Bot will auto-resume next cycle\n\n"
+            f"Fix: Run token code in Colab and update GitHub secret\n"
             f"Time: {datetime.now()}"
         )
         sys.exit(1)
@@ -170,18 +235,13 @@ def download_video(drive_service, file_info):
 
 
 def upload_to_youtube(youtube_service, video_path, filename):
-    title = filename.rsplit('.', 1)[0]
-    title = title.replace('_', ' ').replace('-', ' ').title()
-    if "#Shorts" not in title:
-        title = f"{title} #Shorts"
-    if len(title) > 100:
-        title = title[:97] + "..."
+    title, description, tags = generate_ai_metadata(filename)
 
     body = {
         'snippet': {
             'title': title,
-            'description': DEFAULT_DESCRIPTION,
-            'tags': DEFAULT_TAGS,
+            'description': description,
+            'tags': tags,
             'categoryId': '22',
         },
         'status': {
@@ -202,7 +262,7 @@ def upload_to_youtube(youtube_service, video_path, filename):
     video_id = response['id']
     video_url = f"https://youtube.com/shorts/{video_id}"
     print(f"Uploaded: {video_url}")
-    return video_id, video_url
+    return video_id, video_url, title
 
 
 def move_to_uploaded(drive_service, file_info, pending_folder_id, uploaded_folder_id):
@@ -238,9 +298,7 @@ def main():
         print("No videos to upload. Exiting.")
         send_alert(
             "No Videos Left",
-            f"All videos uploaded!\n"
-            f"Add more videos to Drive → YouTubeShorts → pending\n"
-            f"Time: {datetime.now()}"
+            f"Add more videos to Drive pending folder.\nTime: {datetime.now()}"
         )
         return
 
@@ -251,13 +309,13 @@ def main():
     temp_path = download_video(drive_service, video_info)
 
     try:
-        video_id, video_url = upload_to_youtube(youtube_service, temp_path, video_info['name'])
+        video_id, video_url, title = upload_to_youtube(youtube_service, temp_path, video_info['name'])
         uploaded_folder_id = get_uploaded_folder_id(drive_service)
         move_to_uploaded(drive_service, video_info, pending_folder_id, uploaded_folder_id)
 
         print("=" * 50)
         print("SUCCESS!")
-        print(f"Video: {video_info['name']}")
+        print(f"Title: {title}")
         print(f"URL: {video_url}")
         print(f"Remaining: {remaining - 1}")
         print("=" * 50)
@@ -267,9 +325,7 @@ def main():
         print(f"Upload failed: {error_msg}")
         send_alert(
             "Upload Failed",
-            f"Video: {video_info['name']}\n"
-            f"Error: {error_msg}\n"
-            f"Time: {datetime.now()}"
+            f"Video: {video_info['name']}\nError: {error_msg}\nTime: {datetime.now()}"
         )
         sys.exit(1)
 
