@@ -5,6 +5,8 @@ import random
 import tempfile
 import smtplib
 import hashlib
+import urllib.request
+import urllib.parse
 from email.mime.text import MIMEText
 from datetime import datetime
 from google.oauth2.credentials import Credentials
@@ -23,6 +25,42 @@ ALERT_EMAIL = os.environ.get('ALERT_EMAIL', '')
 ALERT_APP_PASSWORD = os.environ.get('ALERT_APP_PASSWORD', '')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
 SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID', '')
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
+
+
+# ============================================
+# ALERTS: EMAIL + TELEGRAM
+# ============================================
+def send_telegram(message):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    try:
+        text = urllib.parse.quote(message)
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage?chat_id={TELEGRAM_CHAT_ID}&text={text}&parse_mode=Markdown"
+        urllib.request.urlopen(url)
+        print("Telegram alert sent")
+    except Exception as e:
+        print(f"Telegram alert failed: {e}")
+
+
+def send_alert(subject, message):
+    if ALERT_EMAIL and ALERT_APP_PASSWORD:
+        try:
+            msg = MIMEText(message)
+            msg['Subject'] = f"YouTube Bot: {subject}"
+            msg['From'] = ALERT_EMAIL
+            msg['To'] = ALERT_EMAIL
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login(ALERT_EMAIL, ALERT_APP_PASSWORD)
+            server.send_message(msg)
+            server.quit()
+            print(f"Email alert sent: {subject}")
+        except Exception as e:
+            print(f"Email alert failed: {e}")
+
+    send_telegram(f"*{subject}*\n\n{message}")
 
 
 # ============================================
@@ -91,101 +129,9 @@ def get_trending_topics():
 
 
 # ============================================
-# AI TITLE GENERATION WITH TRENDS
-# ============================================
-def generate_ai_metadata(filename):
-    if not GROQ_API_KEY:
-        print("No Groq API key, using filename as title")
-        return fallback_metadata(filename)
-
-    try:
-        client = Groq(api_key=GROQ_API_KEY)
-        clean_name = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
-
-        title_style, description_base, base_tags = get_anti_ban_config(filename)
-        trending = get_trending_topics()
-
-        trends_text = ""
-        if trending:
-            trends_text = f"\n\nToday's trending topics: {', '.join(trending[:5])}\nIf any trend relates to the video, cleverly include it in the title."
-
-        prompt = f"""You are a YouTube Shorts viral expert.
-
-Video filename: "{clean_name}"
-Title style: {title_style}{trends_text}
-
-Rules for TITLE:
-- Style: {title_style}
-- Under 80 characters
-- Must end with #Shorts
-- Make people NEED to click
-- Use 1-2 emojis max
-
-Rules for DESCRIPTION:
-- 2-3 engaging lines
-- Call to action
-- Do NOT include hashtags (I add them separately)
-
-Rules for TAGS:
-- 5 specific tags related to video content
-- Mix broad and niche tags
-
-Respond ONLY in this JSON format:
-{{"title": "your title #Shorts", "description": "your description", "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]}}"""
-
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.9,
-            max_tokens=300,
-        )
-
-        result = response.choices[0].message.content.strip()
-
-        if "```json" in result:
-            result = result.split("```json")[1].split("```")[0].strip()
-        elif "```" in result:
-            result = result.split("```")[1].split("```")[0].strip()
-
-        metadata = json.loads(result)
-        title = metadata.get("title", "")
-        ai_description = metadata.get("description", "")
-        ai_tags = metadata.get("tags", [])
-
-        if "#Shorts" not in title:
-            title = f"{title} #Shorts"
-        if len(title) > 100:
-            title = title[:97] + "..."
-
-        all_tags = list(set(ai_tags + base_tags))
-        hashtags = " ".join([f"#{tag}" for tag in base_tags])
-        full_description = f"{ai_description}\n\n{hashtags}"
-
-        print(f"AI Title: {title}")
-        print(f"Style: {title_style}")
-        print(f"Tags: {', '.join(all_tags)}")
-        return title, full_description, all_tags
-
-    except Exception as e:
-        print(f"AI generation failed: {e}")
-        return fallback_metadata(filename)
-
-
-def fallback_metadata(filename):
-    title = filename.rsplit('.', 1)[0]
-    title = title.replace('_', ' ').replace('-', ' ').title()
-    if "#Shorts" not in title:
-        title = f"{title} #Shorts"
-    if len(title) > 100:
-        title = title[:97] + "..."
-    _, description, tags = get_anti_ban_config(filename)
-    return title, description, tags
-
-
-# ============================================
 # GOOGLE SHEETS LOGGING
 # ============================================
-def log_to_sheets(drive_service, video_name, title, video_url, tags, trending):
+def log_to_sheets(video_name, title, video_url, tags, trending):
     if not SPREADSHEET_ID:
         print("No spreadsheet ID, skipping sheets log")
         return
@@ -258,26 +204,101 @@ def get_learning_data():
 
 
 # ============================================
+# AI TITLE GENERATION WITH TRENDS + LEARNING
+# ============================================
+def generate_ai_metadata(filename):
+    if not GROQ_API_KEY:
+        print("No Groq API key, using filename as title")
+        return fallback_metadata(filename)
+
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        clean_name = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
+
+        title_style, description_base, base_tags = get_anti_ban_config(filename)
+        trending = get_trending_topics()
+        learning = get_learning_data()
+
+        trends_text = ""
+        if trending:
+            trends_text = f"\n\nToday's trending topics: {', '.join(trending[:5])}\nIf any trend relates to the video, cleverly include it in the title."
+
+        prompt = f"""You are a YouTube Shorts viral expert.
+
+Video filename: "{clean_name}"
+Title style: {title_style}{trends_text}{learning}
+
+Rules for TITLE:
+- Style: {title_style}
+- Under 80 characters
+- Must end with #Shorts
+- Make people NEED to click
+- Use 1-2 emojis max
+
+Rules for DESCRIPTION:
+- 2-3 engaging lines
+- Call to action
+- Do NOT include hashtags (I add them separately)
+
+Rules for TAGS:
+- 5 specific tags related to video content
+- Mix broad and niche tags
+
+Respond ONLY in this JSON format:
+{{"title": "your title #Shorts", "description": "your description", "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]}}"""
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.9,
+            max_tokens=300,
+        )
+
+        result = response.choices[0].message.content.strip()
+
+        if "```json" in result:
+            result = result.split("```json")[1].split("```")[0].strip()
+        elif "```" in result:
+            result = result.split("```")[1].split("```")[0].strip()
+
+        metadata = json.loads(result)
+        title = metadata.get("title", "")
+        ai_description = metadata.get("description", "")
+        ai_tags = metadata.get("tags", [])
+
+        if "#Shorts" not in title:
+            title = f"{title} #Shorts"
+        if len(title) > 100:
+            title = title[:97] + "..."
+
+        all_tags = list(set(ai_tags + base_tags))
+        hashtags = " ".join([f"#{tag}" for tag in base_tags])
+        full_description = f"{ai_description}\n\n{hashtags}"
+
+        print(f"AI Title: {title}")
+        print(f"Style: {title_style}")
+        print(f"Tags: {', '.join(all_tags)}")
+        return title, full_description, all_tags
+
+    except Exception as e:
+        print(f"AI generation failed: {e}")
+        return fallback_metadata(filename)
+
+
+def fallback_metadata(filename):
+    title = filename.rsplit('.', 1)[0]
+    title = title.replace('_', ' ').replace('-', ' ').title()
+    if "#Shorts" not in title:
+        title = f"{title} #Shorts"
+    if len(title) > 100:
+        title = title[:97] + "..."
+    _, description, tags = get_anti_ban_config(filename)
+    return title, description, tags
+
+
+# ============================================
 # CORE SERVICES
 # ============================================
-def send_alert(subject, message):
-    if not ALERT_EMAIL or not ALERT_APP_PASSWORD:
-        return
-    try:
-        msg = MIMEText(message)
-        msg['Subject'] = f"YouTube Bot: {subject}"
-        msg['From'] = ALERT_EMAIL
-        msg['To'] = ALERT_EMAIL
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(ALERT_EMAIL, ALERT_APP_PASSWORD)
-        server.send_message(msg)
-        server.quit()
-        print(f"Alert sent: {subject}")
-    except Exception as e:
-        print(f"Alert failed: {e}")
-
-
 def get_drive_service():
     sa_info = json.loads(SERVICE_ACCOUNT_JSON)
     creds = service_account.Credentials.from_service_account_info(
@@ -307,14 +328,14 @@ def get_youtube_service():
         print(f"YouTube auth FAILED: {error_msg}")
         send_alert(
             "TOKEN EXPIRED - ACTION NEEDED",
-            f"YouTube refresh token expired!\n\n"
-            f"Error: {error_msg}\n\n"
-            f"Fix: Run token code in Colab and update GitHub secret\n"
-            f"Time: {datetime.now()}"
+            f"YouTube refresh token expired!\n\nError: {error_msg}\n\nFix: Run token code in Colab and update GitHub secret\nTime: {datetime.now()}"
         )
         sys.exit(1)
 
 
+# ============================================
+# DRIVE OPERATIONS
+# ============================================
 def get_pending_folder_id(drive_service):
     query = (
         f"'{DRIVE_FOLDER_ID}' in parents and "
@@ -396,6 +417,19 @@ def download_video(drive_service, file_info):
     return temp_path
 
 
+def move_to_uploaded(drive_service, file_info, pending_folder_id, uploaded_folder_id):
+    drive_service.files().update(
+        fileId=file_info['id'],
+        addParents=uploaded_folder_id,
+        removeParents=pending_folder_id,
+        fields='id, parents'
+    ).execute()
+    print("Moved to uploaded folder")
+
+
+# ============================================
+# YOUTUBE UPLOAD
+# ============================================
 def upload_to_youtube(youtube_service, video_path, filename):
     title, description, tags = generate_ai_metadata(filename)
 
@@ -425,16 +459,6 @@ def upload_to_youtube(youtube_service, video_path, filename):
     video_url = f"https://youtube.com/shorts/{video_id}"
     print(f"Uploaded: {video_url}")
     return video_id, video_url, title, tags
-
-
-def move_to_uploaded(drive_service, file_info, pending_folder_id, uploaded_folder_id):
-    drive_service.files().update(
-        fileId=file_info['id'],
-        addParents=uploaded_folder_id,
-        removeParents=pending_folder_id,
-        fields='id, parents'
-    ).execute()
-    print("Moved to uploaded folder")
 
 
 # ============================================
@@ -475,7 +499,7 @@ def main():
         video_id, video_url, title, tags = upload_to_youtube(youtube_service, temp_path, video_info['name'])
         uploaded_folder_id = get_uploaded_folder_id(drive_service)
         move_to_uploaded(drive_service, video_info, pending_folder_id, uploaded_folder_id)
-        log_to_sheets(drive_service, video_info['name'], title, video_url, tags, trending)
+        log_to_sheets(video_info['name'], title, video_url, tags, trending)
 
         print("=" * 50)
         print("SUCCESS!")
@@ -483,6 +507,8 @@ def main():
         print(f"URL: {video_url}")
         print(f"Remaining: {remaining - 1}")
         print("=" * 50)
+
+        send_telegram(f"✅ *Uploaded!*\n\n📹 {title}\n🔗 {video_url}\n📊 Remaining: {remaining - 1}")
 
     except Exception as e:
         error_msg = str(e)
