@@ -70,7 +70,7 @@ Respond in EXACTLY this JSON format only, no other text:
 {{"title": "your title here #Shorts", "description": "your description here", "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]}}"""
 
         response = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.9,
             max_tokens=300,
