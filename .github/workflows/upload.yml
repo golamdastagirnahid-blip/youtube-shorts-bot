@@ -32,4 +32,5 @@ jobs:
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
           ALERT_APP_PASSWORD: ${{ secrets.ALERT_APP_PASSWORD }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: python uploader.py
