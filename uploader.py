@@ -1,8 +1,10 @@
 import os
 import json
 import sys
+import random
 import tempfile
 import smtplib
+import hashlib
 from email.mime.text import MIMEText
 from datetime import datetime
 from google.oauth2.credentials import Credentials
@@ -20,8 +22,244 @@ SERVICE_ACCOUNT_JSON = os.environ.get('GOOGLE_SERVICE_ACCOUNT')
 ALERT_EMAIL = os.environ.get('ALERT_EMAIL', '')
 ALERT_APP_PASSWORD = os.environ.get('ALERT_APP_PASSWORD', '')
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID', '')
 
 
+# ============================================
+# ANTI SHADOW BAN SYSTEM
+# ============================================
+HASHTAG_POOLS = [
+    ["shorts", "viral", "trending", "fyp", "explore"],
+    ["shorts", "viralvideo", "trend", "foryou", "discover"],
+    ["shortvideo", "viral", "trending2024", "fypage", "recommended"],
+    ["shorts", "viralshorts", "trendingshorts", "fypシ", "mustwatch"],
+    ["ytshorts", "viral", "trending", "foryoupage", "entertainment"],
+]
+
+DESCRIPTION_TEMPLATES = [
+    "🔥 Watch till the end!\n\nLike & Subscribe for more! 👍\n\n{hashtags}",
+    "😱 You won't believe this!\n\nSubscribe for daily content! 🔔\n\n{hashtags}",
+    "💯 This is amazing!\n\nDrop a ❤️ if you agree!\n\n{hashtags}",
+    "⚡ Wait for it...\n\nFollow for more! 🚀\n\n{hashtags}",
+    "🎯 Don't miss this!\n\nShare with friends! 🔄\n\n{hashtags}",
+    "👀 Watch this!\n\nNew content daily! ✨\n\n{hashtags}",
+    "🤯 Mind blowing!\n\nTap ❤️ and Subscribe! 🔔\n\n{hashtags}",
+]
+
+TITLE_STYLES = [
+    "catchy and curiosity-driven with emoji",
+    "shocking and surprising with emoji",
+    "question-based that makes people curious",
+    "bold statement that creates debate",
+    "emotional and relatable with emoji",
+    "funny and entertaining with emoji",
+    "inspiring and motivational with emoji",
+]
+
+
+def get_anti_ban_config(filename):
+    seed = int(hashlib.md5(filename.encode()).hexdigest()[:8], 16)
+    random.seed(seed + int(datetime.now().strftime('%Y%m%d')))
+
+    hashtag_set = random.choice(HASHTAG_POOLS)
+    description_template = random.choice(DESCRIPTION_TEMPLATES)
+    title_style = random.choice(TITLE_STYLES)
+    extra_tags = random.sample(["amazing", "wow", "unbelievable", "insane",
+                                 "epic", "cool", "awesome", "incredible",
+                                 "mindblowing", "satisfying"], 3)
+    all_tags = hashtag_set + extra_tags
+    hashtags = " ".join([f"#{tag}" for tag in all_tags])
+    description = description_template.format(hashtags=hashtags)
+
+    return title_style, description, all_tags
+
+
+# ============================================
+# GOOGLE TRENDS
+# ============================================
+def get_trending_topics():
+    try:
+        from pytrends.request import TrendReq
+        pytrends = TrendReq(hl='en-US', tz=360)
+        trending = pytrends.trending_searches(pn='united_states')
+        topics = trending[0].tolist()[:10]
+        print(f"Trending topics: {', '.join(topics[:5])}")
+        return topics
+    except Exception as e:
+        print(f"Trends fetch failed: {e}")
+        return []
+
+
+# ============================================
+# AI TITLE GENERATION WITH TRENDS
+# ============================================
+def generate_ai_metadata(filename):
+    if not GROQ_API_KEY:
+        print("No Groq API key, using filename as title")
+        return fallback_metadata(filename)
+
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        clean_name = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
+
+        title_style, description_base, base_tags = get_anti_ban_config(filename)
+        trending = get_trending_topics()
+
+        trends_text = ""
+        if trending:
+            trends_text = f"\n\nToday's trending topics: {', '.join(trending[:5])}\nIf any trend relates to the video, cleverly include it in the title."
+
+        prompt = f"""You are a YouTube Shorts viral expert.
+
+Video filename: "{clean_name}"
+Title style: {title_style}{trends_text}
+
+Rules for TITLE:
+- Style: {title_style}
+- Under 80 characters
+- Must end with #Shorts
+- Make people NEED to click
+- Use 1-2 emojis max
+
+Rules for DESCRIPTION:
+- 2-3 engaging lines
+- Call to action
+- Do NOT include hashtags (I add them separately)
+
+Rules for TAGS:
+- 5 specific tags related to video content
+- Mix broad and niche tags
+
+Respond ONLY in this JSON format:
+{{"title": "your title #Shorts", "description": "your description", "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]}}"""
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.9,
+            max_tokens=300,
+        )
+
+        result = response.choices[0].message.content.strip()
+
+        if "```json" in result:
+            result = result.split("```json")[1].split("```")[0].strip()
+        elif "```" in result:
+            result = result.split("```")[1].split("```")[0].strip()
+
+        metadata = json.loads(result)
+        title = metadata.get("title", "")
+        ai_description = metadata.get("description", "")
+        ai_tags = metadata.get("tags", [])
+
+        if "#Shorts" not in title:
+            title = f"{title} #Shorts"
+        if len(title) > 100:
+            title = title[:97] + "..."
+
+        all_tags = list(set(ai_tags + base_tags))
+        hashtags = " ".join([f"#{tag}" for tag in base_tags])
+        full_description = f"{ai_description}\n\n{hashtags}"
+
+        print(f"AI Title: {title}")
+        print(f"Style: {title_style}")
+        print(f"Tags: {', '.join(all_tags)}")
+        return title, full_description, all_tags
+
+    except Exception as e:
+        print(f"AI generation failed: {e}")
+        return fallback_metadata(filename)
+
+
+def fallback_metadata(filename):
+    title = filename.rsplit('.', 1)[0]
+    title = title.replace('_', ' ').replace('-', ' ').title()
+    if "#Shorts" not in title:
+        title = f"{title} #Shorts"
+    if len(title) > 100:
+        title = title[:97] + "..."
+    _, description, tags = get_anti_ban_config(filename)
+    return title, description, tags
+
+
+# ============================================
+# GOOGLE SHEETS LOGGING
+# ============================================
+def log_to_sheets(drive_service, video_name, title, video_url, tags, trending):
+    if not SPREADSHEET_ID:
+        print("No spreadsheet ID, skipping sheets log")
+        return
+    try:
+        sa_info = json.loads(SERVICE_ACCOUNT_JSON)
+        creds = service_account.Credentials.from_service_account_info(
+            sa_info,
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        sheets = build('sheets', 'v4', credentials=creds)
+
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        trends_used = ', '.join(trending[:3]) if trending else 'None'
+        tags_str = ', '.join(tags)
+
+        row = [[now, video_name, title, video_url, tags_str, trends_used, "0", "0", "0"]]
+
+        sheets.spreadsheets().values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range='Sheet1!A:I',
+            valueInputOption='RAW',
+            body={'values': row}
+        ).execute()
+        print("Logged to Google Sheets")
+    except Exception as e:
+        print(f"Sheets logging failed: {e}")
+
+
+# ============================================
+# SELF LEARNING - CHECK PAST PERFORMANCE
+# ============================================
+def get_learning_data():
+    if not SPREADSHEET_ID or not SERVICE_ACCOUNT_JSON:
+        return ""
+    try:
+        sa_info = json.loads(SERVICE_ACCOUNT_JSON)
+        creds = service_account.Credentials.from_service_account_info(
+            sa_info,
+            scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
+        )
+        sheets = build('sheets', 'v4', credentials=creds)
+
+        result = sheets.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range='Sheet1!A:I'
+        ).execute()
+
+        rows = result.get('values', [])
+        if len(rows) < 3:
+            return ""
+
+        data_rows = rows[1:]
+        best_videos = sorted(data_rows, key=lambda x: int(x[6]) if len(x) > 6 and x[6].isdigit() else 0, reverse=True)[:3]
+
+        if not best_videos:
+            return ""
+
+        learning = "\n\nLEARNING FROM PAST PERFORMANCE:\n"
+        learning += "These title styles got the most views:\n"
+        for v in best_videos:
+            if len(v) > 6:
+                learning += f"- Title: {v[2]} (Views: {v[6]})\n"
+
+        print(f"Learning from {len(best_videos)} past videos")
+        return learning
+
+    except Exception as e:
+        print(f"Learning data fetch failed: {e}")
+        return ""
+
+
+# ============================================
+# CORE SERVICES
+# ============================================
 def send_alert(subject, message):
     if not ALERT_EMAIL or not ALERT_APP_PASSWORD:
         return
@@ -38,81 +276,6 @@ def send_alert(subject, message):
         print(f"Alert sent: {subject}")
     except Exception as e:
         print(f"Alert failed: {e}")
-
-
-def generate_ai_metadata(filename):
-    if not GROQ_API_KEY:
-        print("No Groq API key, using filename as title")
-        return fallback_metadata(filename)
-
-    try:
-        client = Groq(api_key=GROQ_API_KEY)
-        clean_name = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
-
-        prompt = f"""You are a YouTube Shorts expert. Generate a viral title and description for a Short video.
-
-The video filename is: "{clean_name}"
-
-Rules for TITLE:
-- Must be catchy and clickbait (but not misleading)
-- Use emojis (1-2 max)
-- Keep under 80 characters
-- Must end with #Shorts
-- Make people want to click
-
-Rules for DESCRIPTION:
-- 3-4 lines max
-- Include a call to action (like, subscribe)
-- Add 5-8 relevant hashtags
-- Make it engaging
-
-Respond in EXACTLY this JSON format only, no other text:
-{{"title": "your title here #Shorts", "description": "your description here", "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]}}"""
-
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.9,
-            max_tokens=300,
-        )
-
-        result = response.choices[0].message.content.strip()
-
-        # Clean up response
-        if "```json" in result:
-            result = result.split("```json")[1].split("```")[0].strip()
-        elif "```" in result:
-            result = result.split("```")[1].split("```")[0].strip()
-
-        metadata = json.loads(result)
-        title = metadata.get("title", "")
-        description = metadata.get("description", "")
-        tags = metadata.get("tags", [])
-
-        if "#Shorts" not in title:
-            title = f"{title} #Shorts"
-        if len(title) > 100:
-            title = title[:97] + "..."
-
-        print(f"AI Title: {title}")
-        print(f"AI Tags: {', '.join(tags)}")
-        return title, description, tags
-
-    except Exception as e:
-        print(f"AI generation failed: {e}")
-        return fallback_metadata(filename)
-
-
-def fallback_metadata(filename):
-    title = filename.rsplit('.', 1)[0]
-    title = title.replace('_', ' ').replace('-', ' ').title()
-    if "#Shorts" not in title:
-        title = f"{title} #Shorts"
-    if len(title) > 100:
-        title = title[:97] + "..."
-    description = "Watch till the end!\n\nLike and Subscribe!\n\n#Shorts #Viral #Trending"
-    tags = ["shorts", "viral", "trending", "fyp"]
-    return title, description, tags
 
 
 def get_drive_service():
@@ -162,7 +325,6 @@ def get_pending_folder_id(drive_service):
     results = drive_service.files().list(q=query, fields="files(id)").execute()
     folders = results.get('files', [])
     if not folders:
-        print("No pending folder found")
         return None
     return folders[0]['id']
 
@@ -262,7 +424,7 @@ def upload_to_youtube(youtube_service, video_path, filename):
     video_id = response['id']
     video_url = f"https://youtube.com/shorts/{video_id}"
     print(f"Uploaded: {video_url}")
-    return video_id, video_url, title
+    return video_id, video_url, title, tags
 
 
 def move_to_uploaded(drive_service, file_info, pending_folder_id, uploaded_folder_id):
@@ -275,6 +437,9 @@ def move_to_uploaded(drive_service, file_info, pending_folder_id, uploaded_folde
     print("Moved to uploaded folder")
 
 
+# ============================================
+# MAIN
+# ============================================
 def main():
     print(f"Bot started: {datetime.now()}")
     print("=" * 50)
@@ -296,10 +461,7 @@ def main():
     video_info = get_next_video(drive_service, pending_folder_id)
     if not video_info:
         print("No videos to upload. Exiting.")
-        send_alert(
-            "No Videos Left",
-            f"Add more videos to Drive pending folder.\nTime: {datetime.now()}"
-        )
+        send_alert("No Videos Left", f"Add more videos to Drive pending folder.\nTime: {datetime.now()}")
         return
 
     remaining = count_pending(drive_service, pending_folder_id)
@@ -307,11 +469,13 @@ def main():
     print(f"Next video: {video_info['name']}")
 
     temp_path = download_video(drive_service, video_info)
+    trending = get_trending_topics()
 
     try:
-        video_id, video_url, title = upload_to_youtube(youtube_service, temp_path, video_info['name'])
+        video_id, video_url, title, tags = upload_to_youtube(youtube_service, temp_path, video_info['name'])
         uploaded_folder_id = get_uploaded_folder_id(drive_service)
         move_to_uploaded(drive_service, video_info, pending_folder_id, uploaded_folder_id)
+        log_to_sheets(drive_service, video_info['name'], title, video_url, tags, trending)
 
         print("=" * 50)
         print("SUCCESS!")
@@ -323,10 +487,7 @@ def main():
     except Exception as e:
         error_msg = str(e)
         print(f"Upload failed: {error_msg}")
-        send_alert(
-            "Upload Failed",
-            f"Video: {video_info['name']}\nError: {error_msg}\nTime: {datetime.now()}"
-        )
+        send_alert("Upload Failed", f"Video: {video_info['name']}\nError: {error_msg}\nTime: {datetime.now()}")
         sys.exit(1)
 
     finally:
