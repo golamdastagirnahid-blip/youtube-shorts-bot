@@ -1,20 +1,25 @@
-# ============================================================
-# YOUTUBE SHORTS AUTO UPLOADER v4.0 - GOD MODE
-# Features:
-# ✅ Self-Scheduling (Rewrites own cron)
-# ✅ AI Titles (Llama 3.3 70B)
-# ✅ Google Trends Integration
-# ✅ Anti Shadow Ban System
-# ✅ Self Learning AI
-# ✅ Google Sheets Logging
-# ✅ Professional Telegram Reports
-# ✅ Email Alerts
-# ✅ Auto Retry on Failure
-# ✅ Video Duplicate Checker
-# ✅ Auto Category Detection
-# ✅ Competitor Title Spy
-# ✅ Human-like Scheduling
-# ============================================================
+# ================================================================
+# YOUTUBE SHORTS AUTO UPLOADER
+# Version: 5.0 FINAL - FOREVER
+# ================================================================
+# FEATURES:
+# ✅ Self-Scheduling (Rewrites own cron - same time everywhere)
+# ✅ AI Titles + Descriptions (Llama 3.3 70B via Groq)
+# ✅ Google Trends Integration (safe - won't crash bot)
+# ✅ Anti Shadow Ban (hashtag + description + style rotation)
+# ✅ Self Learning AI (reads Google Sheets performance)
+# ✅ Competitor Title Spy (YouTube search based)
+# ✅ Auto Category Detection (50+ keywords)
+# ✅ Video Duplicate Checker (by name + size)
+# ✅ Professional Telegram Reports (single consistent time)
+# ✅ Email Alerts (backup notification)
+# ✅ Google Sheets Logging (full history)
+# ✅ Auto Retry on Failure (3 attempts)
+# ✅ Human-like Scheduling (3-4 hour random gaps)
+# ✅ Zero delay (instant upload at trigger time)
+# ✅ Telegram char limit safe (max 4000 chars)
+# ✅ All errors handled gracefully
+# ================================================================
 
 import os
 import json
@@ -38,68 +43,75 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from groq import Groq
 
 
-# ============================================================
+# ================================================================
 # ENVIRONMENT VARIABLES
-# ============================================================
-CLIENT_ID = os.environ.get('YOUTUBE_CLIENT_ID')
-CLIENT_SECRET = os.environ.get('YOUTUBE_CLIENT_SECRET')
-REFRESH_TOKEN = os.environ.get('YOUTUBE_REFRESH_TOKEN')
-DRIVE_FOLDER_ID = os.environ.get('DRIVE_FOLDER_ID')
-SERVICE_ACCOUNT_JSON = os.environ.get('GOOGLE_SERVICE_ACCOUNT')
-ALERT_EMAIL = os.environ.get('ALERT_EMAIL', '')
-ALERT_APP_PASSWORD = os.environ.get('ALERT_APP_PASSWORD', '')
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
-SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID', '')
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
-TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
-GH_TOKEN = os.environ.get('GH_TOKEN')
+# ================================================================
+CLIENT_ID         = os.environ.get('YOUTUBE_CLIENT_ID')
+CLIENT_SECRET     = os.environ.get('YOUTUBE_CLIENT_SECRET')
+REFRESH_TOKEN     = os.environ.get('YOUTUBE_REFRESH_TOKEN')
+DRIVE_FOLDER_ID   = os.environ.get('DRIVE_FOLDER_ID')
+SA_JSON           = os.environ.get('GOOGLE_SERVICE_ACCOUNT')
+ALERT_EMAIL       = os.environ.get('ALERT_EMAIL', '')
+ALERT_PASSWORD    = os.environ.get('ALERT_APP_PASSWORD', '')
+GROQ_API_KEY      = os.environ.get('GROQ_API_KEY', '')
+SPREADSHEET_ID    = os.environ.get('SPREADSHEET_ID', '')
+TG_TOKEN          = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+TG_CHAT           = os.environ.get('TELEGRAM_CHAT_ID', '')
+GH_TOKEN          = os.environ.get('GH_TOKEN', '')
+GITHUB_REPO       = os.environ.get('GITHUB_REPOSITORY', '')
 
 
-# ============================================================
-# YOUTUBE CATEGORY MAP
-# ============================================================
+# ================================================================
+# CATEGORY MAP
+# ================================================================
 CATEGORY_MAP = {
-    "film": "1", "animation": "1", "movie": "1",
-    "car": "2", "vehicle": "2", "driving": "2",
+    "film": "1", "animation": "1", "movie": "1", "cinema": "1",
+    "car": "2", "vehicle": "2", "driving": "2", "motorcycle": "2",
     "music": "10", "song": "10", "singing": "10", "dance": "10",
+    "concert": "10", "dj": "10", "beat": "10",
     "pet": "15", "animal": "15", "dog": "15", "cat": "15",
-    "wildlife": "15", "nature": "15",
+    "wildlife": "15", "nature": "15", "bird": "15", "fish": "15",
     "sport": "17", "fitness": "17", "gym": "17", "workout": "17",
-    "football": "17", "basketball": "17", "soccer": "17", "cricket": "17",
+    "football": "17", "basketball": "17", "soccer": "17",
+    "cricket": "17", "tennis": "17", "yoga": "17",
     "travel": "19", "village": "19", "city": "19", "tourism": "19",
     "destination": "19", "landscape": "19", "monsoon": "19",
-    "gaming": "20", "game": "20", "minecraft": "20", "fortnite": "20",
-    "vlog": "22", "blog": "22", "daily": "22", "lifestyle": "22",
-    "comedy": "23", "funny": "23", "humor": "23", "meme": "23",
-    "entertainment": "24", "challenge": "24", "reaction": "24",
-    "news": "25", "politics": "25",
-    "howto": "26", "tutorial": "26", "diy": "26", "tips": "26",
-    "hack": "26", "food": "26", "cooking": "26", "recipe": "26",
-    "fashion": "26", "beauty": "26", "makeup": "26",
-    "education": "27", "science": "27", "history": "27", "fact": "27",
-    "tech": "28", "technology": "28", "phone": "28", "computer": "28",
-    "ai": "28", "robot": "28",
-    "motivation": "22", "inspire": "22", "success": "22",
-    "horror": "1", "scary": "1", "ghost": "1",
-    "asmr": "22", "satisfying": "22", "relaxing": "22",
     "highland": "19", "scottish": "19", "medieval": "19",
     "riverside": "19", "mountain": "19", "forest": "19",
+    "beach": "19", "island": "19", "desert": "19",
+    "gaming": "20", "game": "20", "minecraft": "20",
+    "fortnite": "20", "gta": "20", "playstation": "20",
+    "vlog": "22", "blog": "22", "daily": "22", "lifestyle": "22",
+    "motivation": "22", "inspire": "22", "success": "22",
+    "asmr": "22", "satisfying": "22", "relaxing": "22",
+    "comedy": "23", "funny": "23", "humor": "23",
+    "meme": "23", "joke": "23", "prank": "23",
+    "entertainment": "24", "challenge": "24", "reaction": "24",
+    "news": "25", "politics": "25", "world": "25",
+    "howto": "26", "tutorial": "26", "diy": "26",
+    "tips": "26", "hack": "26", "food": "26",
+    "cooking": "26", "recipe": "26", "kitchen": "26",
+    "fashion": "26", "beauty": "26", "makeup": "26",
+    "education": "27", "science": "27", "history": "27",
+    "fact": "27", "knowledge": "27", "learning": "27",
+    "tech": "28", "technology": "28", "phone": "28",
+    "computer": "28", "ai": "28", "robot": "28", "iphone": "28",
 }
 
 CATEGORY_NAMES = {
-    "1": "Film & Animation", "2": "Autos & Vehicles",
-    "10": "Music", "15": "Pets & Animals",
-    "17": "Sports", "19": "Travel & Events",
-    "20": "Gaming", "22": "People & Blogs",
-    "23": "Comedy", "24": "Entertainment",
-    "25": "News & Politics", "26": "Howto & Style",
-    "27": "Education", "28": "Science & Technology",
+    "1": "Film & Animation",    "2": "Autos & Vehicles",
+    "10": "Music",              "15": "Pets & Animals",
+    "17": "Sports",             "19": "Travel & Events",
+    "20": "Gaming",             "22": "People & Blogs",
+    "23": "Comedy",             "24": "Entertainment",
+    "25": "News & Politics",    "26": "Howto & Style",
+    "27": "Education",          "28": "Science & Technology",
 }
 
 
-# ============================================================
-# ANTI SHADOW BAN CONFIG
-# ============================================================
+# ================================================================
+# ANTI SHADOW BAN POOLS
+# ================================================================
 HASHTAG_POOLS = [
     ["shorts", "viral", "trending", "fyp", "explore"],
     ["shorts", "viralvideo", "trend", "foryou", "discover"],
@@ -108,6 +120,7 @@ HASHTAG_POOLS = [
     ["ytshorts", "viral", "trending", "foryoupage", "entertainment"],
     ["shorts", "viralcontent", "trending", "foryoupageシ", "watchthis"],
     ["shortsvideo", "viral", "trendingnow", "fyp", "videooftheday"],
+    ["shorts", "viralpost", "trending", "fyppage", "viral2024"],
 ]
 
 DESCRIPTION_TEMPLATES = [
@@ -121,6 +134,8 @@ DESCRIPTION_TEMPLATES = [
     "🌟 This made my day!\n\nDouble tap if you loved it! ❤️\n\n{hashtags}",
     "🎬 Best video today!\n\nSave this for later! 🔖\n\n{hashtags}",
     "💥 Incredible!\n\nTag someone who needs to see this! 👇\n\n{hashtags}",
+    "🙌 Absolutely love this!\n\nHit Subscribe! 🔔\n\n{hashtags}",
+    "😮 Did you see that?!\n\nLike if this surprised you! ❤️\n\n{hashtags}",
 ]
 
 TITLE_STYLES = [
@@ -134,412 +149,394 @@ TITLE_STYLES = [
     "mysterious and intriguing with emoji",
     "educational but exciting with emoji",
     "storytelling hook that draws people in",
+    "number-based listicle style with emoji",
+    "cliffhanger style that demands watching",
 ]
 
 
-# ============================================================
-# TELEGRAM - BASIC SENDER
-# ============================================================
+# ================================================================
+# TELEGRAM - SAFE SENDER (handles 4096 char limit)
+# ================================================================
 def send_telegram(message):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not TG_TOKEN or not TG_CHAT:
         return
     try:
+        # Truncate safely if over Telegram limit
+        if len(message) > 4000:
+            message = message[:3997] + "..."
         text = urllib.parse.quote(message)
         url = (
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
-            f"/sendMessage?chat_id={TELEGRAM_CHAT_ID}"
+            f"https://api.telegram.org/bot{TG_TOKEN}"
+            f"/sendMessage?chat_id={TG_CHAT}"
             f"&text={text}&parse_mode=Markdown"
-            f"&disable_web_page_preview=false"
+            f"&disable_web_page_preview=true"
         )
-        urllib.request.urlopen(url, timeout=10)
+        urllib.request.urlopen(url, timeout=15)
         print("✅ Telegram sent")
     except Exception as e:
         print(f"Telegram failed: {e}")
 
 
-# ============================================================
-# TELEGRAM - PROFESSIONAL REPORT
-# ============================================================
-def send_telegram_report(
-    status,
-    video_name="",
-    title="",
-    video_url="",
-    category="",
-    tags=None,
-    remaining=0,
-    trending=None,
-    next_schedule="",
-    upload_time=0,
-    file_size_mb=0,
+# ================================================================
+# TELEGRAM - PROFESSIONAL REPORTS
+# ================================================================
+def telegram_success(
+    video_name, title, video_url, category,
+    tags, remaining, trending, next_schedule,
+    upload_seconds, file_size_mb
 ):
-    if tags is None:
-        tags = []
-    if trending is None:
-        trending = []
+    tag_str   = " ".join([f"#{t}" for t in tags[:5]])
+    trend_str = ", ".join(trending[:3]) if trending else "None"
+    indicator = "🟢" if remaining > 10 else "🟡" if remaining > 3 else "🔴"
+    days_left = remaining // 8
+    now       = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
 
+    msg = (
+        f"╔══════════════════════════╗\n"
+        f"║  ✅ UPLOAD SUCCESSFUL     ║\n"
+        f"╚══════════════════════════╝\n\n"
+        f"📹 *VIDEO INFO*\n"
+        f"┣ File: `{video_name[:35]}`\n"
+        f"┣ Size: `{file_size_mb:.1f} MB`\n"
+        f"┣ Category: `{category}`\n"
+        f"┗ Duration: `{upload_seconds:.0f} sec`\n\n"
+        f"📝 *AI TITLE*\n"
+        f"┗ {title}\n\n"
+        f"🏷️ *TAGS*\n"
+        f"┗ {tag_str}\n\n"
+        f"📈 *TRENDS*\n"
+        f"┗ `{trend_str}`\n\n"
+        f"🔗 *URL*\n"
+        f"┗ {video_url}\n\n"
+        f"📊 *QUEUE*\n"
+        f"┣ {indicator} Remaining: `{remaining} videos`\n"
+        f"┣ Est. Days Left: `{days_left} days`\n"
+        f"┗ Next Upload: `{next_schedule} UTC`\n\n"
+        f"🕐 `{now}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 _Shorts Bot v5.0 FINAL_"
+    )
+    send_telegram(msg)
+
+
+def telegram_scheduled(next_schedule, remaining):
+    msg = (
+        f"╔══════════════════════════╗\n"
+        f"║  📅 SCHEDULE UPDATED      ║\n"
+        f"╚══════════════════════════╝\n\n"
+        f"⏰ Next Run: `{next_schedule} UTC`\n"
+        f"📊 Remaining: `{remaining} videos`\n"
+        f"⏳ Gap: `3-4 hours (random)`\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 _Shorts Bot v5.0 FINAL_"
+    )
+    send_telegram(msg)
+
+
+def telegram_no_videos():
     now = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
-
-    if status == "success":
-        tag_list = " ".join([f"#{t}" for t in tags[:5]])
-        trend_list = ", ".join(trending[:3]) if trending else "None detected"
-        total_indicator = (
-            "🟢" if remaining > 10
-            else "🟡" if remaining > 3
-            else "🔴"
-        )
-        days_left = remaining // 6
-
-        message = (
-            f"╔══════════════════════════╗\n"
-            f"║  ✅ UPLOAD SUCCESSFUL     ║\n"
-            f"╚══════════════════════════╝\n\n"
-            f"📹 *VIDEO DETAILS*\n"
-            f"┣ File: `{video_name[:35]}`\n"
-            f"┣ Size: `{file_size_mb:.1f} MB`\n"
-            f"┣ Category: `{category}`\n"
-            f"┗ Upload Time: `{upload_time:.1f} sec`\n\n"
-            f"📝 *AI GENERATED TITLE*\n"
-            f"┗ {title}\n\n"
-            f"🏷️ *TAGS USED*\n"
-            f"┗ {tag_list}\n\n"
-            f"📈 *TRENDS MATCHED*\n"
-            f"┗ `{trend_list}`\n\n"
-            f"🔗 *YOUTUBE URL*\n"
-            f"┗ {video_url}\n\n"
-            f"📊 *QUEUE STATUS*\n"
-            f"┣ {total_indicator} Remaining: `{remaining} videos`\n"
-            f"┣ Est. Days Left: `{days_left} days`\n"
-            f"┗ Next Upload: `{next_schedule} UTC`\n\n"
-            f"⏰ *TIMESTAMP*\n"
-            f"┗ `{now}`\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🤖 _YouTube Shorts Bot v4.0_"
-        )
-
-    elif status == "scheduled":
-        message = (
-            f"╔══════════════════════════╗\n"
-            f"║  📅 SCHEDULE UPDATED      ║\n"
-            f"╚══════════════════════════╝\n\n"
-            f"🎲 *Next Upload Scheduled!*\n\n"
-            f"⏰ Next Run: `{next_schedule} UTC`\n"
-            f"📊 Remaining: `{remaining} videos`\n"
-            f"⏳ Gap: `3-4 hours (random)`\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🤖 _YouTube Shorts Bot v4.0_"
-        )
-
-    elif status == "no_videos":
-        message = (
-            f"╔══════════════════════════╗\n"
-            f"║  📭 NO VIDEOS LEFT        ║\n"
-            f"╚══════════════════════════╝\n\n"
-            f"⚠️ *Action Required!*\n\n"
-            f"Your pending folder is empty!\n\n"
-            f"📁 *Add videos to:*\n"
-            f"┗ Drive → YouTubeShorts → pending\n\n"
-            f"💡 *Tips:*\n"
-            f"┣ Videos must be under 60 seconds\n"
-            f"┣ Vertical format (9:16) preferred\n"
-            f"┗ MP4 format recommended\n\n"
-            f"⏰ `{now}`\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🤖 _YouTube Shorts Bot v4.0_"
-        )
-
-    elif status == "error":
-        message = (
-            f"╔══════════════════════════╗\n"
-            f"║  ❌ UPLOAD FAILED         ║\n"
-            f"╚══════════════════════════╝\n\n"
-            f"📹 File: `{video_name[:35]}`\n\n"
-            f"🔴 *Error Details:*\n"
-            f"┗ `{str(title)[:200]}`\n\n"
-            f"🔧 *Action Required:*\n"
-            f"┣ Check GitHub Actions logs\n"
-            f"┣ Verify YouTube API quota\n"
-            f"┗ Check token expiry\n\n"
-            f"⏰ `{now}`\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🤖 _YouTube Shorts Bot v4.0_"
-        )
-
-    elif status == "token_expired":
-        message = (
-            f"╔══════════════════════════╗\n"
-            f"║  🚨 TOKEN EXPIRED         ║\n"
-            f"╚══════════════════════════╝\n\n"
-            f"⛔ *YouTube token has expired!*\n\n"
-            f"🔧 *Fix in 3 steps:*\n"
-            f"┣ 1️⃣ Open Google Colab\n"
-            f"┣ 2️⃣ Run token generation code\n"
-            f"┗ 3️⃣ Update YOUTUBE_REFRESH_TOKEN\n\n"
-            f"✅ Bot resumes automatically after fix!\n\n"
-            f"⏰ `{now}`\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🤖 _YouTube Shorts Bot v4.0_"
-        )
-
-    elif status == "duplicate":
-        message = (
-            f"╔══════════════════════════╗\n"
-            f"║  ⚠️ DUPLICATE SKIPPED     ║\n"
-            f"╚══════════════════════════╝\n\n"
-            f"📹 File: `{video_name[:35]}`\n\n"
-            f"This video was already uploaded!\n"
-            f"Moved to duplicates folder.\n\n"
-            f"📊 Remaining: `{remaining} videos`\n"
-            f"⏰ `{now}`\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🤖 _YouTube Shorts Bot v4.0_"
-        )
-
-    send_telegram(message)
+    msg = (
+        f"╔══════════════════════════╗\n"
+        f"║  📭 NO VIDEOS LEFT        ║\n"
+        f"╚══════════════════════════╝\n\n"
+        f"⚠️ *Action Required!*\n\n"
+        f"📁 Add videos to:\n"
+        f"┗ Drive → YouTubeShorts → pending\n\n"
+        f"💡 *Requirements:*\n"
+        f"┣ Under 60 seconds\n"
+        f"┣ Vertical format (9:16)\n"
+        f"┗ MP4 format\n\n"
+        f"🕐 `{now}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 _Shorts Bot v5.0 FINAL_"
+    )
+    send_telegram(msg)
 
 
-# ============================================================
+def telegram_error(video_name, error_msg):
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+    msg = (
+        f"╔══════════════════════════╗\n"
+        f"║  ❌ UPLOAD FAILED         ║\n"
+        f"╚══════════════════════════╝\n\n"
+        f"📹 `{video_name[:40]}`\n\n"
+        f"🔴 *Error:*\n"
+        f"┗ `{str(error_msg)[:200]}`\n\n"
+        f"🔧 *Check:*\n"
+        f"┣ GitHub Actions logs\n"
+        f"┣ YouTube API quota\n"
+        f"┗ Token expiry\n\n"
+        f"🕐 `{now}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 _Shorts Bot v5.0 FINAL_"
+    )
+    send_telegram(msg)
+
+
+def telegram_token_expired():
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+    msg = (
+        f"╔══════════════════════════╗\n"
+        f"║  🚨 TOKEN EXPIRED         ║\n"
+        f"╚══════════════════════════╝\n\n"
+        f"⛔ YouTube token expired!\n\n"
+        f"🔧 *Fix (3 steps):*\n"
+        f"┣ 1️⃣ Open Google Colab\n"
+        f"┣ 2️⃣ Run token code\n"
+        f"┗ 3️⃣ Update GitHub Secret\n\n"
+        f"✅ Bot auto-resumes after fix!\n\n"
+        f"🕐 `{now}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 _Shorts Bot v5.0 FINAL_"
+    )
+    send_telegram(msg)
+
+
+def telegram_duplicate(video_name, remaining):
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+    msg = (
+        f"╔══════════════════════════╗\n"
+        f"║  ⚠️ DUPLICATE SKIPPED     ║\n"
+        f"╚══════════════════════════╝\n\n"
+        f"📹 `{video_name[:40]}`\n"
+        f"Already uploaded before!\n"
+        f"Moved to duplicates folder.\n\n"
+        f"📊 Remaining: `{remaining} videos`\n"
+        f"🕐 `{now}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 _Shorts Bot v5.0 FINAL_"
+    )
+    send_telegram(msg)
+
+
+# ================================================================
 # EMAIL ALERT
-# ============================================================
-def send_alert(subject, message):
-    if ALERT_EMAIL and ALERT_APP_PASSWORD:
-        try:
-            msg = MIMEText(message)
-            msg['Subject'] = f"YouTube Bot: {subject}"
-            msg['From'] = ALERT_EMAIL
-            msg['To'] = ALERT_EMAIL
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login(ALERT_EMAIL, ALERT_APP_PASSWORD)
-            server.send_message(msg)
-            server.quit()
-            print(f"✅ Email sent: {subject}")
-        except Exception as e:
-            print(f"Email failed: {e}")
-    send_telegram(f"⚠️ *{subject}*\n\n{message}")
+# ================================================================
+def send_email(subject, body):
+    if not ALERT_EMAIL or not ALERT_PASSWORD:
+        return
+    try:
+        msg = MIMEText(body)
+        msg['Subject'] = f"YouTube Bot: {subject}"
+        msg['From']    = ALERT_EMAIL
+        msg['To']      = ALERT_EMAIL
+        s = smtplib.SMTP('smtp.gmail.com', 587)
+        s.starttls()
+        s.login(ALERT_EMAIL, ALERT_PASSWORD)
+        s.send_message(msg)
+        s.quit()
+        print(f"✅ Email: {subject}")
+    except Exception as e:
+        print(f"Email failed: {e}")
 
 
-# ============================================================
+# ================================================================
 # SELF-SCHEDULING ENGINE
-# ============================================================
-def get_next_schedule_time():
-    random_gap = random.randint(180, 240)
-    next_run = datetime.utcnow() + timedelta(minutes=random_gap)
-    return f"{next_run.hour:02d}:{next_run.minute:02d}", next_run, random_gap
-
-
-def update_next_schedule(remaining=0):
-    if not GH_TOKEN:
-        print("⚠️ GH_TOKEN missing. Skipping auto-schedule.")
+# ================================================================
+def update_schedule(next_run_dt, remaining):
+    """Rewrites upload.yml cron with the exact same next_run_dt"""
+    if not GH_TOKEN or not GITHUB_REPO:
+        print("⚠️ GH_TOKEN or GITHUB_REPO missing")
         return
 
     try:
-        random_gap = random.randint(180, 240)
-        next_run = datetime.utcnow() + timedelta(minutes=random_gap)
-        new_cron = f"{next_run.minute} {next_run.hour} * * *"
-
-        repo = os.environ.get('GITHUB_REPOSITORY')
-        path = ".github/workflows/upload.yml"
-        url = f"https://api.github.com/repos/{repo}/contents/{path}"
-
-        headers = {
+        new_cron     = f"{next_run_dt.minute} {next_run_dt.hour} * * *"
+        next_time_str = f"{next_run_dt.hour:02d}:{next_run_dt.minute:02d}"
+        path         = ".github/workflows/upload.yml"
+        url          = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+        headers      = {
             "Authorization": f"token {GH_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
+            "Accept": "application/vnd.github.v3+json",
+            "Content-Type": "application/json",
         }
 
-        # Get current file
+        # GET current file
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req) as r:
-            data = json.loads(r.read().decode())
-            sha = data['sha']
-            content = base64.b64decode(data['content']).decode()
+            data    = json.loads(r.read().decode())
+            sha     = data['sha']
+            content = base64.b64decode(data['content']).decode('utf-8')
 
-        # Replace cron line
-        updated_content = re.sub(
-            r"cron: '.*'",
-            f"cron: '{new_cron}'",
-            content,
-            count=1
-        )
+        # Replace only first cron line
+        updated = re.sub(r"cron: '[^']*'", f"cron: '{new_cron}'", content, count=1)
 
-        # Push update
-        update_data = {
-            "message": f"🤖 Auto-Schedule: {next_run.hour:02d}:{next_run.minute:02d} UTC",
-            "content": base64.b64encode(updated_content.encode()).decode(),
-            "sha": sha
-        }
-
-        req_put = urllib.request.Request(
-            url,
-            data=json.dumps(update_data).encode(),
-            headers=headers,
-            method='PUT'
-        )
+        # PUT updated file
+        payload = json.dumps({
+            "message": f"🤖 Bot scheduled: {next_time_str} UTC",
+            "content": base64.b64encode(updated.encode('utf-8')).decode('utf-8'),
+            "sha": sha,
+        }).encode('utf-8')
+        req_put = urllib.request.Request(url, data=payload, headers=headers, method='PUT')
         with urllib.request.urlopen(req_put):
-            print(f"✅ Schedule updated: {new_cron}")
+            print(f"✅ Cron updated → {new_cron}")
 
-        send_telegram_report(
-            status="scheduled",
-            remaining=remaining,
-            next_schedule=f"{next_run.hour:02d}:{next_run.minute:02d}",
-        )
+        # Send scheduled telegram with SAME time
+        telegram_scheduled(next_time_str, remaining)
 
     except Exception as e:
         print(f"❌ Schedule update failed: {e}")
 
 
-# ============================================================
-# ANTI SHADOW BAN
-# ============================================================
+# ================================================================
+# ANTI SHADOW BAN CONFIG
+# ================================================================
 def get_anti_ban_config(filename):
     seed = int(hashlib.md5(filename.encode()).hexdigest()[:8], 16)
-    random.seed(seed + int(datetime.now().strftime('%Y%m%d%H')))
+    random.seed(seed + int(datetime.utcnow().strftime('%Y%m%d%H')))
 
     hashtag_set = random.choice(HASHTAG_POOLS)
-    description_template = random.choice(DESCRIPTION_TEMPLATES)
+    desc_tmpl   = random.choice(DESCRIPTION_TEMPLATES)
     title_style = random.choice(TITLE_STYLES)
 
-    extra_tags = random.sample([
+    extra = random.sample([
         "amazing", "wow", "unbelievable", "insane", "epic",
         "cool", "awesome", "incredible", "mindblowing", "satisfying",
-        "beautiful", "perfect", "outstanding", "brilliant", "stunning"
+        "beautiful", "perfect", "outstanding", "brilliant", "stunning",
     ], 4)
 
-    all_tags = hashtag_set + extra_tags
-    hashtags = " ".join([f"#{tag}" for tag in all_tags])
-    description = description_template.format(hashtags=hashtags)
+    all_tags  = list(set(hashtag_set + extra))
+    hashtags  = " ".join([f"#{t}" for t in hashtag_set])
+    desc      = desc_tmpl.format(hashtags=hashtags)
 
-    print(f"🛡️ Anti-ban style: {title_style[:40]}")
-    return title_style, description, all_tags
+    print(f"🛡️ Style: {title_style[:45]}")
+    return title_style, desc, all_tags
 
 
-# ============================================================
+# ================================================================
 # AUTO CATEGORY DETECTION
-# ============================================================
+# ================================================================
 def detect_category(filename):
-    clean = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').lower()
+    clean = (
+        filename.rsplit('.', 1)[0]
+        .replace('_', ' ')
+        .replace('-', ' ')
+        .lower()
+    )
     words = clean.split()
 
-    category_id = "22"
+    cat_id = "22"  # Default: People & Blogs
     for word in words:
         if word in CATEGORY_MAP:
-            category_id = CATEGORY_MAP[word]
+            cat_id = CATEGORY_MAP[word]
             break
 
-    category_name = CATEGORY_NAMES.get(category_id, "People & Blogs")
-    print(f"🏷️ Category: {category_name}")
-    return category_id, category_name
+    cat_name = CATEGORY_NAMES.get(cat_id, "People & Blogs")
+    print(f"🏷️ Category: {cat_name} ({cat_id})")
+    return cat_id, cat_name
 
 
-# ============================================================
-# GOOGLE TRENDS
-# ============================================================
-def get_trending_topics():
+# ================================================================
+# GOOGLE TRENDS (SAFE - WON'T CRASH BOT)
+# ================================================================
+def get_trends():
     try:
         from pytrends.request import TrendReq
-        pytrends = TrendReq(hl='en-US', tz=360)
-        topics = pytrends.trending_searches(pn='united_states')[0].tolist()[:10]
-        print(f"📈 Trending: {', '.join(topics[:5])}")
+        pt      = TrendReq(hl='en-US', tz=360, timeout=(10, 25))
+        topics  = pt.trending_searches(pn='united_states')[0].tolist()[:10]
+        print(f"📈 Trends: {', '.join(topics[:5])}")
         return topics
     except Exception as e:
-        print(f"Trends failed (non-critical): {e}")
+        print(f"Trends unavailable (non-critical): {e}")
         return []
 
 
-# ============================================================
-# SELF LEARNING
-# ============================================================
+# ================================================================
+# SELF-LEARNING (READS SHEETS PERFORMANCE)
+# ================================================================
 def get_learning_data():
-    if not SPREADSHEET_ID:
+    if not SPREADSHEET_ID or not SA_JSON:
         return ""
     try:
-        sa_info = json.loads(SERVICE_ACCOUNT_JSON)
-        creds = service_account.Credentials.from_service_account_info(
-            sa_info,
+        creds  = service_account.Credentials.from_service_account_info(
+            json.loads(SA_JSON),
             scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
         )
         sheets = build('sheets', 'v4', credentials=creds)
         result = sheets.spreadsheets().values().get(
             spreadsheetId=SPREADSHEET_ID,
-            range='Sheet1!A:I'
+            range='Sheet1!A:J'
         ).execute()
         rows = result.get('values', [])
         if len(rows) < 3:
             return ""
-        data_rows = rows[1:]
-        best = sorted(
-            data_rows,
-            key=lambda x: int(x[6]) if len(x) > 6 and x[6].isdigit() else 0,
+
+        # Column G (index 6) = Views
+        data   = rows[1:]
+        best   = sorted(
+            [r for r in data if len(r) > 6],
+            key=lambda x: int(x[6]) if x[6].isdigit() else 0,
             reverse=True
         )[:3]
+
         if not best:
             return ""
-        learning = "\n\nBEST PERFORMING TITLES (Learn from these):\n"
-        for v in best:
-            if len(v) > 6:
-                learning += f"- '{v[2]}' → {v[6]} views\n"
-        print(f"🧠 Learning from {len(best)} top videos")
-        return learning
+
+        out = "\n\nLEARN FROM BEST PERFORMING TITLES:\n"
+        for r in best:
+            out += f"- '{r[2]}' → {r[6]} views\n"
+        print(f"🧠 Learning from {len(best)} videos")
+        return out
     except Exception as e:
         print(f"Learning failed (non-critical): {e}")
         return ""
 
 
-# ============================================================
-# COMPETITOR SPY
-# ============================================================
-def spy_competitor_titles(youtube_service, filename):
+# ================================================================
+# COMPETITOR SPY (QUOTA-SAFE: only 1 API call)
+# ================================================================
+def spy_competitors(yt_service, filename):
     try:
-        clean = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
-        stop = ['a', 'an', 'the', 'in', 'on', 'at', 'to', 'for', 'of',
-                'with', 'by', 'from', 'is', 'are', 'was', 'and', 'or']
-        words = [w for w in clean.lower().split() if w not in stop and len(w) > 2]
-        query = ' '.join(words[:4]) + ' shorts'
+        clean     = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
+        stopwords = {
+            'a','an','the','in','on','at','to','for',
+            'of','with','by','from','is','are','was','and','or'
+        }
+        words     = [w for w in clean.lower().split() if w not in stopwords and len(w) > 2]
+        query     = ' '.join(words[:3]) + ' shorts'
 
-        print(f"🕵️ Spying: {query}")
-        res = youtube_service.search().list(
+        print(f"🕵️ Competitor search: {query}")
+        res   = yt_service.search().list(
             q=query, part='snippet', type='video',
-            videoDuration='short', order='viewCount', maxResults=5
+            videoDuration='short', order='viewCount', maxResults=3
         ).execute()
 
         titles = [i['snippet']['title'] for i in res.get('items', [])]
         if not titles:
             return ""
 
-        spy = "\n\nTOP COMPETITOR TITLES (Beat these):\n"
-        for t in titles[:3]:
-            spy += f"- \"{t}\"\n"
-        print(f"🕵️ Found {len(titles)} competitor titles")
-        return spy
+        out = "\n\nTOP COMPETITOR TITLES (Create something BETTER):\n"
+        for t in titles:
+            out += f'- "{t}"\n'
+        print(f"🕵️ {len(titles)} competitor titles found")
+        return out
     except Exception as e:
         print(f"Competitor spy failed (non-critical): {e}")
         return ""
 
 
-# ============================================================
+# ================================================================
 # GOOGLE SHEETS LOGGING
-# ============================================================
-def log_to_sheets(video_name, title, video_url, tags, trending, category_name):
-    if not SPREADSHEET_ID:
+# ================================================================
+def log_to_sheets(video_name, title, url, tags, trending, category_name):
+    if not SPREADSHEET_ID or not SA_JSON:
         return
     try:
-        sa_info = json.loads(SERVICE_ACCOUNT_JSON)
-        creds = service_account.Credentials.from_service_account_info(
-            sa_info,
+        creds  = service_account.Credentials.from_service_account_info(
+            json.loads(SA_JSON),
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
         sheets = build('sheets', 'v4', credentials=creds)
-        row = [[
-            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            video_name,
-            title,
-            video_url,
-            ', '.join(tags),
-            ', '.join(trending[:3]) if trending else 'None',
-            "0",  # Views
-            "0",  # Likes
-            "0",  # Comments
-            category_name,
+        row    = [[
+            datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),  # A
+            video_name,                                          # B
+            title,                                               # C
+            url,                                                 # D
+            ', '.join(tags[:10]),                               # E
+            ', '.join(trending[:3]) if trending else 'None',   # F
+            "0",    # G Views  (update manually)
+            "0",    # H Likes
+            "0",    # I Comments
+            category_name,                                       # J
         ]]
         sheets.spreadsheets().values().append(
             spreadsheetId=SPREADSHEET_ID,
@@ -549,128 +546,137 @@ def log_to_sheets(video_name, title, video_url, tags, trending, category_name):
         ).execute()
         print("📊 Logged to Sheets")
     except Exception as e:
-        print(f"Sheets failed (non-critical): {e}")
+        print(f"Sheets log failed (non-critical): {e}")
 
 
-# ============================================================
+# ================================================================
 # AI METADATA GENERATION
-# ============================================================
-def generate_ai_metadata(filename, youtube_service):
-    category_id, category_name = detect_category(filename)
+# ================================================================
+def generate_metadata(filename, yt_service, trending):
+    cat_id, cat_name = detect_category(filename)
+    title_style, base_desc, base_tags = get_anti_ban_config(filename)
 
     if not GROQ_API_KEY:
-        title, desc, tags = fallback_metadata(filename)
-        return title, desc, tags, category_id, category_name
+        print("No Groq key → fallback metadata")
+        title = (
+            filename.rsplit('.', 1)[0]
+            .replace('_', ' ').replace('-', ' ').title()
+        )
+        if "#Shorts" not in title:
+            title = f"{title} #Shorts"
+        return title[:100], base_desc, base_tags, cat_id, cat_name
 
     try:
-        client = Groq(api_key=GROQ_API_KEY)
-        clean = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
-
-        title_style, desc_base, base_tags = get_anti_ban_config(filename)
-        trending = get_trending_topics()
+        clean    = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
         learning = get_learning_data()
-        competitor = spy_competitor_titles(youtube_service, filename)
+        spy_data = spy_competitors(yt_service, filename)
 
-        trends_text = ""
+        trend_text = ""
         if trending:
-            trends_text = (
-                f"\n\nToday's trends: {', '.join(trending[:5])}"
-                f"\nNaturally include relevant trends if they fit."
+            trend_text = (
+                f"\n\nToday's trending: {', '.join(trending[:5])}"
+                "\nInclude relevant trend ONLY if it naturally fits."
             )
 
         prompt = f"""You are a world-class YouTube Shorts viral expert.
 
-Video: "{clean}"
-Category: {category_name}
-Style: {title_style}{trends_text}{learning}{competitor}
+Video filename: "{clean}"
+Category: {cat_name}
+Title style: {title_style}{trend_text}{learning}{spy_data}
 
 TITLE RULES:
-- Style: {title_style}
-- Max 80 characters
-- End with #Shorts
-- Make viewers NEED to click
-- 1-2 emojis max
+- Use style: {title_style}
+- Max 80 characters total
+- Must end with #Shorts
+- 1-2 emojis maximum
+- Make viewer NEED to click instantly
 
 DESCRIPTION RULES:
-- 2-3 engaging lines
+- 2-3 lines only
 - Strong call to action
-- NO hashtags (added separately)
+- NO hashtags in description
 
 TAGS RULES:
 - Exactly 5 tags
-- Specific to content
-- Mix broad and niche
+- Relevant to video + category
+- No spaces in tags
 
-Respond ONLY in valid JSON:
-{{"title": "title #Shorts", "description": "description", "tags": ["t1","t2","t3","t4","t5"]}}"""
+Reply ONLY valid JSON (no extra text):
+{{"title":"title here #Shorts","description":"description here","tags":["t1","t2","t3","t4","t5"]}}"""
 
+        client   = Groq(api_key=GROQ_API_KEY)
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.9,
-            max_tokens=400,
+            temperature=0.85,
+            max_tokens=350,
         )
 
-        result = response.choices[0].message.content.strip()
-        if "```json" in result:
-            result = result.split("```json")[1].split("```")[0].strip()
-        elif "```" in result:
-            result = result.split("```")[1].split("```")[0].strip()
+        raw = response.choices[0].message.content.strip()
 
-        meta = json.loads(result)
-        title = meta.get("title", "")
-        ai_desc = meta.get("description", "")
-        ai_tags = meta.get("tags", [])
+        # Clean code blocks if any
+        if "```json" in raw:
+            raw = raw.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw:
+            raw = raw.split("```")[1].split("```")[0].strip()
 
+        meta  = json.loads(raw)
+        title = meta.get("title", "").strip()
+        desc  = meta.get("description", "").strip()
+        tags  = meta.get("tags", [])
+
+        # Validate
         if not title or len(title) < 5:
-            raise ValueError("Bad title")
+            raise ValueError("Empty/short title")
 
         if "#Shorts" not in title:
             title = f"{title} #Shorts"
         if len(title) > 100:
             title = title[:97] + "..."
 
-        all_tags = list(set(ai_tags + base_tags))[:30]
-        hashtags = " ".join([f"#{t}" for t in base_tags])
-        full_desc = f"{ai_desc}\n\n{hashtags}"
+        # Merge AI tags with anti-ban base tags
+        all_tags = list(dict.fromkeys(tags + base_tags))[:30]
 
-        print(f"🤖 AI Title: {title}")
-        return title, full_desc, all_tags, category_id, category_name
+        # Add hashtags block to description
+        hashtag_block = " ".join([f"#{t}" for t in base_tags[:6]])
+        full_desc     = f"{desc}\n\n{hashtag_block}"
+
+        print(f"🤖 Title: {title}")
+        print(f"🏷️ Tags: {', '.join(all_tags[:6])}")
+        return title, full_desc, all_tags, cat_id, cat_name
 
     except Exception as e:
-        print(f"AI failed: {e}, using fallback")
-        title, desc, tags = fallback_metadata(filename)
-        return title, desc, tags, category_id, category_name
+        print(f"AI failed ({e}) → fallback")
+        title = (
+            filename.rsplit('.', 1)[0]
+            .replace('_', ' ').replace('-', ' ').title()
+        )
+        if "#Shorts" not in title:
+            title = f"{title} #Shorts"
+        if len(title) > 100:
+            title = title[:97] + "..."
+        return title, base_desc, base_tags, cat_id, cat_name
 
 
-def fallback_metadata(filename):
-    title = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
-    if "#Shorts" not in title:
-        title = f"{title} #Shorts"
-    if len(title) > 100:
-        title = title[:97] + "..."
-    _, description, tags = get_anti_ban_config(filename)
-    return title, description, tags
-
-
-# ============================================================
+# ================================================================
 # GOOGLE SERVICES
-# ============================================================
-def get_drive_service():
+# ================================================================
+def get_drive():
     try:
         creds = service_account.Credentials.from_service_account_info(
-            json.loads(SERVICE_ACCOUNT_JSON),
+            json.loads(SA_JSON),
             scopes=['https://www.googleapis.com/auth/drive']
         )
-        service = build('drive', 'v3', credentials=creds)
-        print("✅ Drive authenticated")
-        return service
+        svc = build('drive', 'v3', credentials=creds)
+        print("✅ Drive ready")
+        return svc
     except Exception as e:
-        send_alert("Drive Auth Failed", str(e))
+        send_email("Drive Auth Failed", str(e))
+        send_telegram(f"❌ Drive auth failed: {e}")
         sys.exit(1)
 
 
-def get_youtube_service():
+def get_youtube():
     try:
         creds = Credentials(
             token=None,
@@ -680,267 +686,308 @@ def get_youtube_service():
             token_uri='https://oauth2.googleapis.com/token',
         )
         creds.refresh(Request())
-        service = build('youtube', 'v3', credentials=creds)
-        print("✅ YouTube authenticated")
-        return service
+        svc = build('youtube', 'v3', credentials=creds)
+        print("✅ YouTube ready")
+        return svc
     except Exception as e:
-        send_telegram_report(status="token_expired")
-        send_alert("TOKEN EXPIRED", str(e))
+        telegram_token_expired()
+        send_email("TOKEN EXPIRED", str(e))
         sys.exit(1)
 
 
-# ============================================================
+# ================================================================
 # DRIVE HELPERS
-# ============================================================
-def get_or_create_folder(drive_service, parent_id, name):
-    query = (
-        f"'{parent_id}' in parents and name='{name}' and "
+# ================================================================
+def get_or_create_folder(drive, parent, name):
+    q   = (
+        f"'{parent}' in parents and name='{name}' and "
         f"mimeType='application/vnd.google-apps.folder' and trashed=false"
     )
-    res = drive_service.files().list(q=query, fields="files(id)").execute()
-    folders = res.get('files', [])
-    if folders:
-        return folders[0]['id']
-    folder = drive_service.files().create(
+    res = drive.files().list(q=q, fields="files(id)").execute()
+    lst = res.get('files', [])
+    if lst:
+        return lst[0]['id']
+    f = drive.files().create(
         body={
             'name': name,
             'mimeType': 'application/vnd.google-apps.folder',
-            'parents': [parent_id]
+            'parents': [parent],
         },
         fields='id'
     ).execute()
-    print(f"📁 Created folder: {name}")
-    return folder['id']
+    print(f"📁 Created: {name}")
+    return f['id']
 
 
-def count_videos(drive_service, folder_id):
-    res = drive_service.files().list(
-        q=f"'{folder_id}' in parents and trashed=false and (mimeType contains 'video/')",
+def count_videos(drive, folder_id):
+    res = drive.files().list(
+        q=(
+            f"'{folder_id}' in parents and trashed=false "
+            f"and (mimeType contains 'video/')"
+        ),
         fields="files(id)",
-        pageSize=1000
+        pageSize=1000,
     ).execute()
     return len(res.get('files', []))
 
 
-def get_next_video(drive_service, folder_id):
-    res = drive_service.files().list(
-        q=f"'{folder_id}' in parents and trashed=false and (mimeType contains 'video/')",
+def get_next_video(drive, folder_id):
+    res = drive.files().list(
+        q=(
+            f"'{folder_id}' in parents and trashed=false "
+            f"and (mimeType contains 'video/')"
+        ),
         fields="files(id, name, size)",
         orderBy="name",
-        pageSize=1
+        pageSize=1,
     ).execute()
     files = res.get('files', [])
     return files[0] if files else None
 
 
-def is_duplicate(drive_service, file_info, uploaded_id):
+def is_duplicate(drive, file_info, uploaded_id):
     try:
-        res = drive_service.files().list(
-            q=f"'{uploaded_id}' in parents and name='{file_info['name']}' and trashed=false",
+        # Check by filename
+        res = drive.files().list(
+            q=(
+                f"'{uploaded_id}' in parents and "
+                f"name='{file_info['name']}' and trashed=false"
+            ),
             fields="files(id)"
         ).execute()
-        return len(res.get('files', [])) > 0
+        if res.get('files'):
+            return True
+
+        # Check by size
+        my_size = file_info.get('size', '0')
+        if my_size != '0':
+            res2 = drive.files().list(
+                q=(
+                    f"'{uploaded_id}' in parents and trashed=false "
+                    f"and (mimeType contains 'video/')"
+                ),
+                fields="files(id, size)",
+                pageSize=200,
+            ).execute()
+            for f in res2.get('files', []):
+                if f.get('size') == my_size:
+                    return True
+        return False
     except:
         return False
 
 
-def download_video(drive_service, file_info):
-    print(f"⬇️ Downloading: {file_info['name']}")
-    request = drive_service.files().get_media(fileId=file_info['id'])
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-    downloader = MediaIoBaseDownload(tmp, request)
-    done = False
-    while not done:
-        status, done = downloader.next_chunk()
-        if status:
-            print(f"   {int(status.progress() * 100)}%")
-    tmp.close()
-    size = os.path.getsize(tmp.name) / (1024 * 1024)
-    print(f"✅ Downloaded: {size:.1f} MB")
-    return tmp.name, size
-
-
-def move_file(drive_service, file_id, from_folder, to_folder):
-    drive_service.files().update(
+def move_file(drive, file_id, from_id, to_id):
+    drive.files().update(
         fileId=file_id,
-        addParents=to_folder,
-        removeParents=from_folder,
+        addParents=to_id,
+        removeParents=from_id,
         fields='id'
     ).execute()
 
 
-# ============================================================
-# YOUTUBE UPLOAD
-# ============================================================
-def upload_video(youtube_service, video_path, filename, retry=3):
-    title, description, tags, category_id, category_name = generate_ai_metadata(
-        filename, youtube_service
+def download_video(drive, file_info):
+    print(f"⬇️ Downloading: {file_info['name']}")
+    req    = drive.files().get_media(fileId=file_info['id'])
+    tmp    = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+    loader = MediaIoBaseDownload(tmp, req)
+    done   = False
+    while not done:
+        status, done = loader.next_chunk()
+        if status:
+            print(f"   {int(status.progress() * 100)}%")
+    tmp.close()
+    mb = os.path.getsize(tmp.name) / (1024 * 1024)
+    print(f"✅ Downloaded: {mb:.1f} MB")
+    return tmp.name, mb
+
+
+# ================================================================
+# YOUTUBE UPLOAD (3 auto-retries)
+# ================================================================
+def upload_to_youtube(yt_service, path, filename, trending):
+    title, desc, tags, cat_id, cat_name = generate_metadata(
+        filename, yt_service, trending
     )
 
     body = {
         'snippet': {
-            'title': title,
-            'description': description,
-            'tags': tags,
-            'categoryId': category_id,
+            'title':       title,
+            'description': desc,
+            'tags':        tags,
+            'categoryId':  cat_id,
         },
         'status': {
-            'privacyStatus': 'public',
+            'privacyStatus':          'public',
             'selfDeclaredMadeForKids': False,
-        }
+        },
     }
 
-    for attempt in range(1, retry + 1):
+    for attempt in range(1, 4):
         try:
-            print(f"📤 Attempt {attempt}/{retry}...")
+            print(f"📤 Upload attempt {attempt}/3 ...")
             media = MediaFileUpload(
-                video_path, mimetype='video/mp4',
-                resumable=True, chunksize=1024 * 1024
+                path,
+                mimetype='video/mp4',
+                resumable=True,
+                chunksize=2 * 1024 * 1024,  # 2MB chunks
             )
-            request = youtube_service.videos().insert(
+            req      = yt_service.videos().insert(
                 part='snippet,status', body=body, media_body=media
             )
             response = None
             while response is None:
-                status, response = request.next_chunk()
+                status, response = req.next_chunk()
                 if status:
                     print(f"   {int(status.progress() * 100)}%")
 
-            video_id = response['id']
-            url = f"https://youtube.com/shorts/{video_id}"
-            print(f"✅ Uploaded: {url}")
-            return url, title, tags, category_name
+            vid_id  = response['id']
+            vid_url = f"https://youtube.com/shorts/{vid_id}"
+            print(f"✅ Live: {vid_url}")
+            return vid_url, title, tags, cat_name
 
         except Exception as e:
             print(f"❌ Attempt {attempt} failed: {e}")
-            if attempt < retry:
-                time.sleep(attempt * 30)
+            if attempt < 3:
+                wait = attempt * 30
+                print(f"   Retrying in {wait}s ...")
+                time.sleep(wait)
             else:
-                raise e
+                raise
 
 
-# ============================================================
+# ================================================================
 # MAIN
-# ============================================================
+# ================================================================
 def main():
     print("=" * 60)
-    print("🤖 YOUTUBE SHORTS BOT v4.0 - GOD MODE")
-    print(f"📅 {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print("🤖 YOUTUBE SHORTS BOT v5.0 FINAL")
+    print(f"🕐 {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     print("=" * 60)
 
-    # Validate secrets
-    required = [
-        'YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET',
-        'YOUTUBE_REFRESH_TOKEN', 'DRIVE_FOLDER_ID',
-        'GOOGLE_SERVICE_ACCOUNT'
+    # Validate required secrets
+    missing = [
+        v for v in [
+            'YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET',
+            'YOUTUBE_REFRESH_TOKEN', 'DRIVE_FOLDER_ID',
+            'GOOGLE_SERVICE_ACCOUNT',
+        ]
+        if not os.environ.get(v)
     ]
-    missing = [v for v in required if not os.environ.get(v)]
     if missing:
-        print(f"❌ Missing: {', '.join(missing)}")
+        msg = f"Missing secrets: {', '.join(missing)}"
+        print(f"❌ {msg}")
+        send_telegram(f"❌ Bot cannot start!\n{msg}")
         sys.exit(1)
 
-    # Init services
-    drive_service = get_drive_service()
-    youtube_service = get_youtube_service()
+    # ── Calculate next run time ONCE (used everywhere) ──────────
+    gap_minutes  = random.randint(180, 240)
+    next_run_dt  = datetime.utcnow() + timedelta(minutes=gap_minutes)
+    next_time_str = f"{next_run_dt.hour:02d}:{next_run_dt.minute:02d}"
+    print(f"⏭️ Next run planned: {next_time_str} UTC (+{gap_minutes} min)")
 
-    # Get folders
-    pending_id = get_or_create_folder(drive_service, DRIVE_FOLDER_ID, 'pending')
-    uploaded_id = get_or_create_folder(drive_service, DRIVE_FOLDER_ID, 'uploaded')
-    duplicate_id = get_or_create_folder(drive_service, DRIVE_FOLDER_ID, 'duplicates')
+    # ── Init services ────────────────────────────────────────────
+    drive = get_drive()
+    yt    = get_youtube()
 
-    # Get trending early
-    trending = get_trending_topics()
+    # ── Folders ──────────────────────────────────────────────────
+    pending_id   = get_or_create_folder(drive, DRIVE_FOLDER_ID, 'pending')
+    uploaded_id  = get_or_create_folder(drive, DRIVE_FOLDER_ID, 'uploaded')
+    duplicate_id = get_or_create_folder(drive, DRIVE_FOLDER_ID, 'duplicates')
 
-    # Find next video
-    video = get_next_video(drive_service, pending_id)
+    # ── Trends (fetch once, pass everywhere) ─────────────────────
+    trending = get_trends()
+
+    # ── Find next video ──────────────────────────────────────────
+    video = get_next_video(drive, pending_id)
     if not video:
-        print("📭 No videos in pending folder")
-        send_telegram_report(status="no_videos")
+        print("📭 Pending folder is empty")
+        telegram_no_videos()
+        send_email("No Videos Left", "Add more to Drive → pending")
+        # Still update schedule so bot keeps running
+        update_schedule(next_run_dt, 0)
         return
 
-    remaining = count_videos(drive_service, pending_id)
-    print(f"📹 Queue: {remaining} videos")
-    print(f"🎬 Next: {video['name']}")
+    total_pending = count_videos(drive, pending_id)
+    print(f"📹 Queue: {total_pending} | Next: {video['name']}")
 
-    # Duplicate check
-    if is_duplicate(drive_service, video, uploaded_id):
+    # ── Duplicate check ──────────────────────────────────────────
+    if is_duplicate(drive, video, uploaded_id):
         print(f"⚠️ Duplicate: {video['name']}")
-        move_file(drive_service, video['id'], pending_id, duplicate_id)
-        send_telegram_report(
-            status="duplicate",
-            video_name=video['name'],
-            remaining=remaining - 1,
-        )
+        move_file(drive, video['id'], pending_id, duplicate_id)
+        remaining_after_dup = count_videos(drive, pending_id)
+        telegram_duplicate(video['name'], remaining_after_dup)
+        # Try scheduling and exit (next run will pick next video)
+        update_schedule(next_run_dt, remaining_after_dup)
         return
 
-    # Download
-    upload_start = time.time()
-    temp_path, file_size = download_video(drive_service, video)
+    # ── Download ─────────────────────────────────────────────────
+    t0 = time.time()
+    temp_path, file_mb = download_video(drive, video)
 
     try:
-        # Upload
-        video_url, title, tags, category_name = upload_video(
-            youtube_service, temp_path, video['name']
+        # ── Upload ───────────────────────────────────────────────
+        vid_url, title, tags, cat_name = upload_to_youtube(
+            yt, temp_path, video['name'], trending
         )
-        upload_duration = time.time() - upload_start
+        upload_seconds = time.time() - t0
 
-        # Move to uploaded
-        move_file(drive_service, video['id'], pending_id, uploaded_id)
+        # ── Move to uploaded ─────────────────────────────────────
+        move_file(drive, video['id'], pending_id, uploaded_id)
 
-        # Log to sheets
-        log_to_sheets(video['name'], title, video_url, tags, trending, category_name)
+        # ── Count remaining ──────────────────────────────────────
+        remaining = count_videos(drive, pending_id)
 
-        # Count remaining after move
-        remaining_after = count_videos(drive_service, pending_id)
+        # ── Log to Sheets ─────────────────────────────────────────
+        log_to_sheets(
+            video['name'], title, vid_url,
+            tags, trending, cat_name
+        )
 
-        # Get next schedule
-        next_time, _, _ = get_next_schedule_time()
-
+        # ── Print summary ────────────────────────────────────────
         print("=" * 60)
         print("🎉 SUCCESS!")
         print(f"📝 {title}")
-        print(f"🔗 {video_url}")
-        print(f"📊 Remaining: {remaining_after}")
+        print(f"🔗 {vid_url}")
+        print(f"📊 Remaining: {remaining}")
+        print(f"⏭️ Next: {next_time_str} UTC")
         print("=" * 60)
 
-        # Professional Telegram report
-        send_telegram_report(
-            status="success",
-            video_name=video['name'],
-            title=title,
-            video_url=video_url,
-            category=category_name,
-            tags=tags,
-            remaining=remaining_after,
-            trending=trending,
-            next_schedule=next_time,
-            upload_time=upload_duration,
-            file_size_mb=file_size,
+        # ── Telegram success (uses SAME next_time_str) ───────────
+        telegram_success(
+            video_name     = video['name'],
+            title          = title,
+            video_url      = vid_url,
+            category       = cat_name,
+            tags           = tags,
+            remaining      = remaining,
+            trending       = trending,
+            next_schedule  = next_time_str,   # ← consistent
+            upload_seconds = upload_seconds,
+            file_size_mb   = file_mb,
         )
 
-        # Self-schedule next run
-        update_next_schedule(remaining_after)
+        # ── Self-schedule (uses SAME next_run_dt) ────────────────
+        update_schedule(next_run_dt, remaining)  # ← consistent
 
     except Exception as e:
-        error = str(e)
-        print(f"❌ Failed: {error}")
-        send_telegram_report(
-            status="error",
-            video_name=video['name'],
-            title=error,
-        )
-        send_alert("Upload Failed", f"{video['name']}\n{error}")
+        err = str(e)
+        print(f"❌ Upload failed: {err}")
+        telegram_error(video['name'], err)
+        send_email("Upload Failed", f"{video['name']}\n{err}")
         sys.exit(1)
 
     finally:
+        # Always clean temp file
         try:
             os.unlink(temp_path)
+            print("🧹 Temp cleaned")
         except:
             pass
 
 
-# ============================================================
+# ================================================================
 # ENTRY POINT
-# ============================================================
+# ================================================================
 if __name__ == '__main__':
     main()
