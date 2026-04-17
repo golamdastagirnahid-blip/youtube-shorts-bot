@@ -7,3 +7,4 @@ httplib2
 groq
 pytrends
 gspread
+requests
