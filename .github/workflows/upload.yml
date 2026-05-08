@@ -2,7 +2,7 @@ name: YouTube Shorts Uploader
 
 on:
   schedule:
-    - cron: '5 9 * * *'
+    - cron: '31 14 * * *'
   workflow_dispatch:
 
 permissions:
