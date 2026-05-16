@@ -1,26 +1,6 @@
 # ================================================================
-# YOUTUBE SHORTS AUTO UPLOADER
-# Version: 5.0 FINAL - FOREVER
+# YouTube Shorts Bot v6.0 — BULLETPROOF / SELF-HEALING
 # ================================================================
-# FEATURES:
-# ✅ Self-Scheduling (Rewrites own cron - same time everywhere)
-# ✅ AI Titles + Descriptions (Llama 3.3 70B via Groq)
-# ✅ Google Trends Integration (safe - won't crash bot)
-# ✅ Anti Shadow Ban (hashtag + description + style rotation)
-# ✅ Self Learning AI (reads Google Sheets performance)
-# ✅ Competitor Title Spy (YouTube search based)
-# ✅ Auto Category Detection (50+ keywords)
-# ✅ Video Duplicate Checker (by name + size)
-# ✅ Professional Telegram Reports (single consistent time)
-# ✅ Email Alerts (backup notification)
-# ✅ Google Sheets Logging (full history)
-# ✅ Auto Retry on Failure (3 attempts)
-# ✅ Human-like Scheduling (3-4 hour random gaps)
-# ✅ Zero delay (instant upload at trigger time)
-# ✅ Telegram char limit safe (max 4000 chars)
-# ✅ All errors handled gracefully
-# ================================================================
-
 import os
 import json
 import sys
@@ -33,6 +13,7 @@ import urllib.parse
 import base64
 import re
 import time
+import traceback
 from email.mime.text import MIMEText
 from datetime import datetime, timedelta
 from google.oauth2.credentials import Credentials
@@ -40,11 +21,9 @@ from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from googleapiclient.errors import HttpError
 from groq import Groq
 
-
-# ================================================================
-# ENVIRONMENT VARIABLES
 # ================================================================
 CLIENT_ID         = os.environ.get('YOUTUBE_CLIENT_ID')
 CLIENT_SECRET     = os.environ.get('YOUTUBE_CLIENT_SECRET')
@@ -60,9 +39,9 @@ TG_CHAT           = os.environ.get('TELEGRAM_CHAT_ID', '')
 GH_TOKEN          = os.environ.get('GH_TOKEN', '')
 GITHUB_REPO       = os.environ.get('GITHUB_REPOSITORY', '')
 
+MAX_VIDEO_RETRIES = 3   # After this many failures, video moves to failed/
+RETRY_PREFIX_RE   = re.compile(r'^retry(\d+)_')
 
-# ================================================================
-# CATEGORY MAP
 # ================================================================
 CATEGORY_MAP = {
     "film": "1", "animation": "1", "movie": "1", "cinema": "1",
@@ -108,9 +87,6 @@ CATEGORY_NAMES = {
     "27": "Education",          "28": "Science & Technology",
 }
 
-
-# ================================================================
-# ANTI SHADOW BAN POOLS
 # ================================================================
 HASHTAG_POOLS = [
     ["shorts", "viral", "trending", "fyp", "explore"],
@@ -153,15 +129,11 @@ TITLE_STYLES = [
     "cliffhanger style that demands watching",
 ]
 
-
-# ================================================================
-# TELEGRAM - SAFE SENDER (handles 4096 char limit)
 # ================================================================
 def send_telegram(message):
     if not TG_TOKEN or not TG_CHAT:
         return
     try:
-        # Truncate safely if over Telegram limit
         if len(message) > 4000:
             message = message[:3997] + "..."
         text = urllib.parse.quote(message)
@@ -177,20 +149,13 @@ def send_telegram(message):
         print(f"Telegram failed: {e}")
 
 
-# ================================================================
-# TELEGRAM - PROFESSIONAL REPORTS
-# ================================================================
-def telegram_success(
-    video_name, title, video_url, category,
-    tags, remaining, trending, next_schedule,
-    upload_seconds, file_size_mb
-):
+def telegram_success(video_name, title, video_url, category, tags, remaining,
+                    trending, next_schedule, upload_seconds, file_size_mb):
     tag_str   = " ".join([f"#{t}" for t in tags[:5]])
     trend_str = ", ".join(trending[:3]) if trending else "None"
     indicator = "🟢" if remaining > 10 else "🟡" if remaining > 3 else "🔴"
     days_left = remaining // 8
     now       = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
-
     msg = (
         f"╔══════════════════════════╗\n"
         f"║  ✅ UPLOAD SUCCESSFUL     ║\n"
@@ -200,35 +165,31 @@ def telegram_success(
         f"┣ Size: `{file_size_mb:.1f} MB`\n"
         f"┣ Category: `{category}`\n"
         f"┗ Duration: `{upload_seconds:.0f} sec`\n\n"
-        f"📝 *AI TITLE*\n"
-        f"┗ {title}\n\n"
-        f"🏷️ *TAGS*\n"
-        f"┗ {tag_str}\n\n"
-        f"📈 *TRENDS*\n"
-        f"┗ `{trend_str}`\n\n"
-        f"🔗 *URL*\n"
-        f"┗ {video_url}\n\n"
+        f"📝 *AI TITLE*\n┗ {title}\n\n"
+        f"🏷️ *TAGS*\n┗ {tag_str}\n\n"
+        f"📈 *TRENDS*\n┗ `{trend_str}`\n\n"
+        f"🔗 *URL*\n┗ {video_url}\n\n"
         f"📊 *QUEUE*\n"
         f"┣ {indicator} Remaining: `{remaining} videos`\n"
         f"┣ Est. Days Left: `{days_left} days`\n"
         f"┗ Next Upload: `{next_schedule} UTC`\n\n"
         f"🕐 `{now}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🤖 _Shorts Bot v5.0 FINAL_"
+        f"🤖 _Shorts Bot v6.0 BULLETPROOF_"
     )
     send_telegram(msg)
 
 
-def telegram_scheduled(next_schedule, remaining):
+def telegram_scheduled(next_schedule, remaining, note=""):
+    extra = f"\n\nℹ️ {note}" if note else ""
     msg = (
         f"╔══════════════════════════╗\n"
         f"║  📅 SCHEDULE UPDATED      ║\n"
         f"╚══════════════════════════╝\n\n"
         f"⏰ Next Run: `{next_schedule} UTC`\n"
-        f"📊 Remaining: `{remaining} videos`\n"
-        f"⏳ Gap: `3-4 hours (random)`\n\n"
+        f"📊 Remaining: `{remaining} videos`{extra}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🤖 _Shorts Bot v5.0 FINAL_"
+        f"🤖 _Shorts Bot v6.0 BULLETPROOF_"
     )
     send_telegram(msg)
 
@@ -240,35 +201,44 @@ def telegram_no_videos():
         f"║  📭 NO VIDEOS LEFT        ║\n"
         f"╚══════════════════════════╝\n\n"
         f"⚠️ *Action Required!*\n\n"
-        f"📁 Add videos to:\n"
-        f"┗ Drive → YouTubeShorts → pending\n\n"
+        f"📁 Add videos to:\n┗ Drive → YouTubeShorts → pending\n\n"
         f"💡 *Requirements:*\n"
-        f"┣ Under 60 seconds\n"
-        f"┣ Vertical format (9:16)\n"
-        f"┗ MP4 format\n\n"
+        f"┣ Under 60 seconds\n┣ Vertical format (9:16)\n┗ MP4 format\n\n"
         f"🕐 `{now}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🤖 _Shorts Bot v5.0 FINAL_"
+        f"🤖 _Shorts Bot v6.0 BULLETPROOF_"
     )
     send_telegram(msg)
 
 
-def telegram_error(video_name, error_msg):
+def telegram_error(video_name, error_msg, retry_info=""):
     now = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
     msg = (
         f"╔══════════════════════════╗\n"
         f"║  ❌ UPLOAD FAILED         ║\n"
         f"╚══════════════════════════╝\n\n"
         f"📹 `{video_name[:40]}`\n\n"
-        f"🔴 *Error:*\n"
-        f"┗ `{str(error_msg)[:200]}`\n\n"
-        f"🔧 *Check:*\n"
-        f"┣ GitHub Actions logs\n"
-        f"┣ YouTube API quota\n"
-        f"┗ Token expiry\n\n"
+        f"🔴 *Error:*\n┗ `{str(error_msg)[:200]}`\n\n"
+        f"🔁 {retry_info}\n\n"
         f"🕐 `{now}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🤖 _Shorts Bot v5.0 FINAL_"
+        f"🤖 _Shorts Bot v6.0 BULLETPROOF_"
+    )
+    send_telegram(msg)
+
+
+def telegram_failed_permanently(video_name):
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+    msg = (
+        f"╔══════════════════════════╗\n"
+        f"║  ⛔ VIDEO GIVEN UP        ║\n"
+        f"╚══════════════════════════╝\n\n"
+        f"📹 `{video_name[:40]}`\n\n"
+        f"Failed {MAX_VIDEO_RETRIES}× — moved to `failed/` folder.\n"
+        f"Queue continues with next video.\n\n"
+        f"🕐 `{now}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🤖 _Shorts Bot v6.0 BULLETPROOF_"
     )
     send_telegram(msg)
 
@@ -284,10 +254,10 @@ def telegram_token_expired():
         f"┣ 1️⃣ Open Google Colab\n"
         f"┣ 2️⃣ Run token code\n"
         f"┗ 3️⃣ Update GitHub Secret\n\n"
-        f"✅ Bot auto-resumes after fix!\n\n"
+        f"✅ Bot keeps polling every 6h until fixed.\n\n"
         f"🕐 `{now}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🤖 _Shorts Bot v5.0 FINAL_"
+        f"🤖 _Shorts Bot v6.0 BULLETPROOF_"
     )
     send_telegram(msg)
 
@@ -299,18 +269,15 @@ def telegram_duplicate(video_name, remaining):
         f"║  ⚠️ DUPLICATE SKIPPED     ║\n"
         f"╚══════════════════════════╝\n\n"
         f"📹 `{video_name[:40]}`\n"
-        f"Already uploaded before!\n"
-        f"Moved to duplicates folder.\n\n"
+        f"Already uploaded before!\nMoved to duplicates folder.\n\n"
         f"📊 Remaining: `{remaining} videos`\n"
         f"🕐 `{now}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🤖 _Shorts Bot v5.0 FINAL_"
+        f"🤖 _Shorts Bot v6.0 BULLETPROOF_"
     )
     send_telegram(msg)
 
 
-# ================================================================
-# EMAIL ALERT
 # ================================================================
 def send_email(subject, body):
     if not ALERT_EMAIL or not ALERT_PASSWORD:
@@ -331,102 +298,88 @@ def send_email(subject, body):
 
 
 # ================================================================
-# SELF-SCHEDULING ENGINE
-# ================================================================
-def update_schedule(next_run_dt, remaining):
-    """Rewrites upload.yml cron with the exact same next_run_dt"""
+def update_schedule(next_run_dt, remaining, note=""):
+    """Rewrite upload.yml cron. Safe to call multiple times / always."""
     if not GH_TOKEN or not GITHUB_REPO:
-        print("⚠️ GH_TOKEN or GITHUB_REPO missing")
-        return
-
+        print("⚠️ GH_TOKEN or GITHUB_REPO missing — cannot self-schedule")
+        return False
     try:
-        new_cron     = f"{next_run_dt.minute} {next_run_dt.hour} * * *"
+        new_cron      = f"{next_run_dt.minute} {next_run_dt.hour} * * *"
         next_time_str = f"{next_run_dt.hour:02d}:{next_run_dt.minute:02d}"
-        path         = ".github/workflows/upload.yml"
-        url          = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-        headers      = {
+        path    = ".github/workflows/upload.yml"
+        url     = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+        headers = {
             "Authorization": f"token {GH_TOKEN}",
             "Accept": "application/vnd.github.v3+json",
             "Content-Type": "application/json",
         }
-
-        # GET current file
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req) as r:
+        with urllib.request.urlopen(req, timeout=30) as r:
             data    = json.loads(r.read().decode())
             sha     = data['sha']
             content = base64.b64decode(data['content']).decode('utf-8')
 
-        # Replace only first cron line
+        # Replace ONLY the first cron line (the primary schedule).
+        # The watchdog cron (every 6h) further down in the file is preserved.
         updated = re.sub(r"cron: '[^']*'", f"cron: '{new_cron}'", content, count=1)
 
-        # PUT updated file
+        if updated == content:
+            print("⚠️ Cron unchanged (already same value)")
+            telegram_scheduled(next_time_str, remaining, note)
+            return True
+
         payload = json.dumps({
             "message": f"🤖 Bot scheduled: {next_time_str} UTC",
             "content": base64.b64encode(updated.encode('utf-8')).decode('utf-8'),
             "sha": sha,
         }).encode('utf-8')
         req_put = urllib.request.Request(url, data=payload, headers=headers, method='PUT')
-        with urllib.request.urlopen(req_put):
+        with urllib.request.urlopen(req_put, timeout=30):
             print(f"✅ Cron updated → {new_cron}")
-
-        # Send scheduled telegram with SAME time
-        telegram_scheduled(next_time_str, remaining)
-
+        telegram_scheduled(next_time_str, remaining, note)
+        return True
     except Exception as e:
         print(f"❌ Schedule update failed: {e}")
+        send_telegram(f"⚠️ Self-reschedule failed: `{str(e)[:200]}`\nWatchdog cron (every 6h) will still trigger bot.")
+        return False
 
 
-# ================================================================
-# ANTI SHADOW BAN CONFIG
 # ================================================================
 def get_anti_ban_config(filename):
     seed = int(hashlib.md5(filename.encode()).hexdigest()[:8], 16)
     random.seed(seed + int(datetime.utcnow().strftime('%Y%m%d%H')))
-
     hashtag_set = random.choice(HASHTAG_POOLS)
     desc_tmpl   = random.choice(DESCRIPTION_TEMPLATES)
     title_style = random.choice(TITLE_STYLES)
-
     extra = random.sample([
         "amazing", "wow", "unbelievable", "insane", "epic",
         "cool", "awesome", "incredible", "mindblowing", "satisfying",
         "beautiful", "perfect", "outstanding", "brilliant", "stunning",
     ], 4)
-
     all_tags  = list(set(hashtag_set + extra))
     hashtags  = " ".join([f"#{t}" for t in hashtag_set])
     desc      = desc_tmpl.format(hashtags=hashtags)
-
     print(f"🛡️ Style: {title_style[:45]}")
     return title_style, desc, all_tags
 
 
 # ================================================================
-# AUTO CATEGORY DETECTION
-# ================================================================
 def detect_category(filename):
     clean = (
-        filename.rsplit('.', 1)[0]
-        .replace('_', ' ')
-        .replace('-', ' ')
-        .lower()
+        strip_retry_prefix(filename).rsplit('.', 1)[0]
+        .replace('_', ' ').replace('-', ' ').lower()
     )
     words = clean.split()
-
-    cat_id = "22"  # Default: People & Blogs
+    cat_id = "22"
     for word in words:
         if word in CATEGORY_MAP:
             cat_id = CATEGORY_MAP[word]
             break
-
     cat_name = CATEGORY_NAMES.get(cat_id, "People & Blogs")
     print(f"🏷️ Category: {cat_name} ({cat_id})")
     return cat_id, cat_name
 
 
-# ================================================================
-# GOOGLE TRENDS (SAFE - WON'T CRASH BOT)
 # ================================================================
 def get_trends():
     try:
@@ -440,9 +393,6 @@ def get_trends():
         return []
 
 
-# ================================================================
-# SELF-LEARNING (READS SHEETS PERFORMANCE)
-# ================================================================
 def get_learning_data():
     if not SPREADSHEET_ID or not SA_JSON:
         return ""
@@ -453,24 +403,19 @@ def get_learning_data():
         )
         sheets = build('sheets', 'v4', credentials=creds)
         result = sheets.spreadsheets().values().get(
-            spreadsheetId=SPREADSHEET_ID,
-            range='Sheet1!A:J'
+            spreadsheetId=SPREADSHEET_ID, range='Sheet1!A:J'
         ).execute()
         rows = result.get('values', [])
         if len(rows) < 3:
             return ""
-
-        # Column G (index 6) = Views
-        data   = rows[1:]
-        best   = sorted(
+        data = rows[1:]
+        best = sorted(
             [r for r in data if len(r) > 6],
             key=lambda x: int(x[6]) if x[6].isdigit() else 0,
             reverse=True
         )[:3]
-
         if not best:
             return ""
-
         out = "\n\nLEARN FROM BEST PERFORMING TITLES:\n"
         for r in best:
             out += f"- '{r[2]}' → {r[6]} views\n"
@@ -481,42 +426,29 @@ def get_learning_data():
         return ""
 
 
-# ================================================================
-# COMPETITOR SPY (QUOTA-SAFE: only 1 API call)
-# ================================================================
 def spy_competitors(yt_service, filename):
     try:
-        clean     = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
-        stopwords = {
-            'a','an','the','in','on','at','to','for',
-            'of','with','by','from','is','are','was','and','or'
-        }
-        words     = [w for w in clean.lower().split() if w not in stopwords and len(w) > 2]
-        query     = ' '.join(words[:3]) + ' shorts'
-
+        clean = strip_retry_prefix(filename).rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
+        stopwords = {'a','an','the','in','on','at','to','for','of','with','by','from','is','are','was','and','or'}
+        words = [w for w in clean.lower().split() if w not in stopwords and len(w) > 2]
+        query = ' '.join(words[:3]) + ' shorts'
         print(f"🕵️ Competitor search: {query}")
-        res   = yt_service.search().list(
+        res = yt_service.search().list(
             q=query, part='snippet', type='video',
             videoDuration='short', order='viewCount', maxResults=3
         ).execute()
-
         titles = [i['snippet']['title'] for i in res.get('items', [])]
         if not titles:
             return ""
-
         out = "\n\nTOP COMPETITOR TITLES (Create something BETTER):\n"
         for t in titles:
             out += f'- "{t}"\n'
-        print(f"🕵️ {len(titles)} competitor titles found")
         return out
     except Exception as e:
         print(f"Competitor spy failed (non-critical): {e}")
         return ""
 
 
-# ================================================================
-# GOOGLE SHEETS LOGGING
-# ================================================================
 def log_to_sheets(video_name, title, url, tags, trending, category_name):
     if not SPREADSHEET_ID or not SA_JSON:
         return
@@ -526,17 +458,13 @@ def log_to_sheets(video_name, title, url, tags, trending, category_name):
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
         sheets = build('sheets', 'v4', credentials=creds)
-        row    = [[
-            datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),  # A
-            video_name,                                          # B
-            title,                                               # C
-            url,                                                 # D
-            ', '.join(tags[:10]),                               # E
-            ', '.join(trending[:3]) if trending else 'None',   # F
-            "0",    # G Views  (update manually)
-            "0",    # H Likes
-            "0",    # I Comments
-            category_name,                                       # J
+        row = [[
+            datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
+            strip_retry_prefix(video_name),
+            title, url,
+            ', '.join(tags[:10]),
+            ', '.join(trending[:3]) if trending else 'None',
+            "0", "0", "0", category_name,
         ]]
         sheets.spreadsheets().values().append(
             spreadsheetId=SPREADSHEET_ID,
@@ -550,34 +478,27 @@ def log_to_sheets(video_name, title, url, tags, trending, category_name):
 
 
 # ================================================================
-# AI METADATA GENERATION
-# ================================================================
 def generate_metadata(filename, yt_service, trending):
     cat_id, cat_name = detect_category(filename)
     title_style, base_desc, base_tags = get_anti_ban_config(filename)
+    clean_name = strip_retry_prefix(filename)
 
     if not GROQ_API_KEY:
-        print("No Groq key → fallback metadata")
-        title = (
-            filename.rsplit('.', 1)[0]
-            .replace('_', ' ').replace('-', ' ').title()
-        )
+        title = clean_name.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
         if "#Shorts" not in title:
             title = f"{title} #Shorts"
         return title[:100], base_desc, base_tags, cat_id, cat_name
 
     try:
-        clean    = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
+        clean    = clean_name.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
         learning = get_learning_data()
-        spy_data = spy_competitors(yt_service, filename)
-
+        spy_data = spy_competitors(yt_service, clean_name)
         trend_text = ""
         if trending:
             trend_text = (
                 f"\n\nToday's trending: {', '.join(trending[:5])}"
                 "\nInclude relevant trend ONLY if it naturally fits."
             )
-
         prompt = f"""You are a world-class YouTube Shorts viral expert.
 
 Video filename: "{clean}"
@@ -608,13 +529,9 @@ Reply ONLY valid JSON (no extra text):
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.85,
-            max_tokens=350,
+            temperature=0.85, max_tokens=350,
         )
-
         raw = response.choices[0].message.content.strip()
-
-        # Clean code blocks if any
         if "```json" in raw:
             raw = raw.split("```json")[1].split("```")[0].strip()
         elif "```" in raw:
@@ -624,33 +541,20 @@ Reply ONLY valid JSON (no extra text):
         title = meta.get("title", "").strip()
         desc  = meta.get("description", "").strip()
         tags  = meta.get("tags", [])
-
-        # Validate
         if not title or len(title) < 5:
             raise ValueError("Empty/short title")
-
         if "#Shorts" not in title:
             title = f"{title} #Shorts"
         if len(title) > 100:
             title = title[:97] + "..."
-
-        # Merge AI tags with anti-ban base tags
         all_tags = list(dict.fromkeys(tags + base_tags))[:30]
-
-        # Add hashtags block to description
         hashtag_block = " ".join([f"#{t}" for t in base_tags[:6]])
         full_desc     = f"{desc}\n\n{hashtag_block}"
-
         print(f"🤖 Title: {title}")
-        print(f"🏷️ Tags: {', '.join(all_tags[:6])}")
         return title, full_desc, all_tags, cat_id, cat_name
-
     except Exception as e:
         print(f"AI failed ({e}) → fallback")
-        title = (
-            filename.rsplit('.', 1)[0]
-            .replace('_', ' ').replace('-', ' ').title()
-        )
+        title = clean_name.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
         if "#Shorts" not in title:
             title = f"{title} #Shorts"
         if len(title) > 100:
@@ -659,60 +563,39 @@ Reply ONLY valid JSON (no extra text):
 
 
 # ================================================================
-# GOOGLE SERVICES
-# ================================================================
 def get_drive():
-    try:
-        creds = service_account.Credentials.from_service_account_info(
-            json.loads(SA_JSON),
-            scopes=['https://www.googleapis.com/auth/drive']
-        )
-        svc = build('drive', 'v3', credentials=creds)
-        print("✅ Drive ready")
-        return svc
-    except Exception as e:
-        send_email("Drive Auth Failed", str(e))
-        send_telegram(f"❌ Drive auth failed: {e}")
-        sys.exit(1)
+    creds = service_account.Credentials.from_service_account_info(
+        json.loads(SA_JSON),
+        scopes=['https://www.googleapis.com/auth/drive']
+    )
+    svc = build('drive', 'v3', credentials=creds)
+    print("✅ Drive ready")
+    return svc
 
 
 def get_youtube():
-    try:
-        creds = Credentials(
-            token=None,
-            refresh_token=REFRESH_TOKEN,
-            client_id=CLIENT_ID,
-            client_secret=CLIENT_SECRET,
-            token_uri='https://oauth2.googleapis.com/token',
-        )
-        creds.refresh(Request())
-        svc = build('youtube', 'v3', credentials=creds)
-        print("✅ YouTube ready")
-        return svc
-    except Exception as e:
-        telegram_token_expired()
-        send_email("TOKEN EXPIRED", str(e))
-        sys.exit(1)
+    creds = Credentials(
+        token=None, refresh_token=REFRESH_TOKEN,
+        client_id=CLIENT_ID, client_secret=CLIENT_SECRET,
+        token_uri='https://oauth2.googleapis.com/token',
+    )
+    creds.refresh(Request())
+    svc = build('youtube', 'v3', credentials=creds)
+    print("✅ YouTube ready")
+    return svc
 
 
-# ================================================================
-# DRIVE HELPERS
 # ================================================================
 def get_or_create_folder(drive, parent, name):
-    q   = (
-        f"'{parent}' in parents and name='{name}' and "
-        f"mimeType='application/vnd.google-apps.folder' and trashed=false"
-    )
+    q = (f"'{parent}' in parents and name='{name}' and "
+         f"mimeType='application/vnd.google-apps.folder' and trashed=false")
     res = drive.files().list(q=q, fields="files(id)").execute()
     lst = res.get('files', [])
     if lst:
         return lst[0]['id']
     f = drive.files().create(
-        body={
-            'name': name,
-            'mimeType': 'application/vnd.google-apps.folder',
-            'parents': [parent],
-        },
+        body={'name': name, 'mimeType': 'application/vnd.google-apps.folder',
+              'parents': [parent]},
         fields='id'
     ).execute()
     print(f"📁 Created: {name}")
@@ -721,273 +604,363 @@ def get_or_create_folder(drive, parent, name):
 
 def count_videos(drive, folder_id):
     res = drive.files().list(
-        q=(
-            f"'{folder_id}' in parents and trashed=false "
-            f"and (mimeType contains 'video/')"
-        ),
-        fields="files(id)",
-        pageSize=1000,
+        q=(f"'{folder_id}' in parents and trashed=false and (mimeType contains 'video/')"),
+        fields="files(id)", pageSize=1000,
     ).execute()
     return len(res.get('files', []))
 
 
 def get_next_video(drive, folder_id):
     res = drive.files().list(
-        q=(
-            f"'{folder_id}' in parents and trashed=false "
-            f"and (mimeType contains 'video/')"
-        ),
-        fields="files(id, name, size)",
-        orderBy="name",
-        pageSize=1,
+        q=(f"'{folder_id}' in parents and trashed=false and (mimeType contains 'video/')"),
+        fields="files(id, name, size)", orderBy="name", pageSize=1,
     ).execute()
     files = res.get('files', [])
     return files[0] if files else None
 
 
+def strip_retry_prefix(name):
+    return RETRY_PREFIX_RE.sub('', name)
+
+
+def get_retry_count(name):
+    m = RETRY_PREFIX_RE.match(name)
+    return int(m.group(1)) if m else 0
+
+
+def bump_retry_prefix(drive, file_info):
+    """Rename file in Drive to retry<N+1>_<original>. Used after a failure
+    so subsequent runs know how many times this video has failed."""
+    try:
+        n = get_retry_count(file_info['name'])
+        base = strip_retry_prefix(file_info['name'])
+        new_name = f"retry{n + 1}_{base}"
+        drive.files().update(fileId=file_info['id'], body={'name': new_name}).execute()
+        print(f"🔁 Renamed → {new_name}")
+        return n + 1
+    except Exception as e:
+        print(f"⚠️ Could not bump retry count: {e}")
+        return get_retry_count(file_info['name']) + 1
+
+
 def is_duplicate(drive, file_info, uploaded_id):
     try:
-        # Check by filename
+        real_name = strip_retry_prefix(file_info['name'])
         res = drive.files().list(
-            q=(
-                f"'{uploaded_id}' in parents and "
-                f"name='{file_info['name']}' and trashed=false"
-            ),
+            q=(f"'{uploaded_id}' in parents and name='{real_name}' and trashed=false"),
             fields="files(id)"
         ).execute()
         if res.get('files'):
             return True
-
-        # Check by size
         my_size = file_info.get('size', '0')
         if my_size != '0':
             res2 = drive.files().list(
-                q=(
-                    f"'{uploaded_id}' in parents and trashed=false "
-                    f"and (mimeType contains 'video/')"
-                ),
-                fields="files(id, size)",
-                pageSize=200,
+                q=(f"'{uploaded_id}' in parents and trashed=false and (mimeType contains 'video/')"),
+                fields="files(id, size)", pageSize=200,
             ).execute()
             for f in res2.get('files', []):
                 if f.get('size') == my_size:
                     return True
         return False
-    except:
+    except Exception:
         return False
 
 
-def move_file(drive, file_id, from_id, to_id):
+def move_file(drive, file_id, from_id, to_id, new_name=None):
+    body = {}
+    if new_name:
+        body['name'] = new_name
     drive.files().update(
-        fileId=file_id,
-        addParents=to_id,
-        removeParents=from_id,
-        fields='id'
+        fileId=file_id, addParents=to_id, removeParents=from_id,
+        body=body if body else None, fields='id'
     ).execute()
 
 
+# ================================================================
 def download_video(drive, file_info):
-    print(f"⬇️ Downloading: {file_info['name']}")
-    req    = drive.files().get_media(fileId=file_info['id'])
-    tmp    = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-    loader = MediaIoBaseDownload(tmp, req)
-    done   = False
-    while not done:
-        status, done = loader.next_chunk()
-        if status:
-            print(f"   {int(status.progress() * 100)}%")
-    tmp.close()
-    mb = os.path.getsize(tmp.name) / (1024 * 1024)
-    print(f"✅ Downloaded: {mb:.1f} MB")
-    return tmp.name, mb
+    last_err = None
+    for attempt in range(1, 4):
+        try:
+            print(f"⬇️ Downloading (attempt {attempt}/3): {file_info['name']}")
+            req    = drive.files().get_media(fileId=file_info['id'])
+            tmp    = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            loader = MediaIoBaseDownload(tmp, req)
+            done   = False
+            while not done:
+                status, done = loader.next_chunk()
+                if status:
+                    print(f"   {int(status.progress() * 100)}%")
+            tmp.close()
+            mb = os.path.getsize(tmp.name) / (1024 * 1024)
+            print(f"✅ Downloaded: {mb:.1f} MB")
+            return tmp.name, mb
+        except Exception as e:
+            last_err = e
+            print(f"❌ Download attempt {attempt} failed: {e}")
+            time.sleep(attempt * 10)
+    raise RuntimeError(f"Download failed after 3 attempts: {last_err}")
 
 
 # ================================================================
-# YOUTUBE UPLOAD (3 auto-retries)
-# ================================================================
+NON_RETRYABLE_REASONS = {
+    'quotaExceeded', 'dailyLimitExceeded', 'rateLimitExceeded',
+    'authError', 'forbidden', 'youtubeSignupRequired',
+}
+
+
+def classify_error(exc):
+    """Return ('retryable'|'quota'|'auth'|'permanent', message)."""
+    msg = str(exc)
+    if isinstance(exc, HttpError):
+        try:
+            content = json.loads(exc.content.decode())
+            reason  = content.get('error', {}).get('errors', [{}])[0].get('reason', '')
+            status  = exc.resp.status
+            if reason in ('quotaExceeded', 'dailyLimitExceeded', 'rateLimitExceeded'):
+                return 'quota', f"{reason} (HTTP {status})"
+            if status in (401, 403) and reason in ('authError', 'forbidden'):
+                return 'auth', f"{reason} (HTTP {status})"
+            if status >= 500:
+                return 'retryable', f"server error {status}"
+            if status == 400:
+                return 'permanent', f"bad request: {msg[:120]}"
+        except Exception:
+            pass
+    if 'invalid_grant' in msg.lower() or 'token has been expired' in msg.lower():
+        return 'auth', 'refresh token invalid/expired'
+    if 'timed out' in msg.lower() or 'connection' in msg.lower():
+        return 'retryable', msg[:120]
+    return 'retryable', msg[:120]
+
+
 def upload_to_youtube(yt_service, path, filename, trending):
-    title, desc, tags, cat_id, cat_name = generate_metadata(
-        filename, yt_service, trending
-    )
-
+    title, desc, tags, cat_id, cat_name = generate_metadata(filename, yt_service, trending)
     body = {
-        'snippet': {
-            'title':       title,
-            'description': desc,
-            'tags':        tags,
-            'categoryId':  cat_id,
-        },
-        'status': {
-            'privacyStatus':          'public',
-            'selfDeclaredMadeForKids': False,
-        },
+        'snippet': {'title': title, 'description': desc, 'tags': tags, 'categoryId': cat_id},
+        'status':  {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False},
     }
-
+    last_exc = None
     for attempt in range(1, 4):
         try:
             print(f"📤 Upload attempt {attempt}/3 ...")
-            media = MediaFileUpload(
-                path,
-                mimetype='video/mp4',
-                resumable=True,
-                chunksize=2 * 1024 * 1024,  # 2MB chunks
-            )
-            req      = yt_service.videos().insert(
-                part='snippet,status', body=body, media_body=media
-            )
+            media = MediaFileUpload(path, mimetype='video/mp4', resumable=True,
+                                    chunksize=2 * 1024 * 1024)
+            req      = yt_service.videos().insert(part='snippet,status', body=body, media_body=media)
             response = None
             while response is None:
                 status, response = req.next_chunk()
                 if status:
                     print(f"   {int(status.progress() * 100)}%")
-
             vid_id  = response['id']
             vid_url = f"https://youtube.com/shorts/{vid_id}"
             print(f"✅ Live: {vid_url}")
             return vid_url, title, tags, cat_name
-
         except Exception as e:
-            print(f"❌ Attempt {attempt} failed: {e}")
+            last_exc = e
+            kind, why = classify_error(e)
+            print(f"❌ Attempt {attempt} failed [{kind}]: {why}")
+            if kind in ('quota', 'auth', 'permanent'):
+                # Don't burn more attempts on non-retryable errors.
+                raise
             if attempt < 3:
                 wait = attempt * 30
                 print(f"   Retrying in {wait}s ...")
                 time.sleep(wait)
-            else:
-                raise
+    raise last_exc
 
 
 # ================================================================
-# MAIN
+def pick_next_run(kind='normal'):
+    """Returns (datetime, note). Different windows for different scenarios."""
+    if kind == 'quota':
+        # Quota resets ~midnight Pacific = 08:00 UTC. Wait ~12h.
+        minutes = random.randint(11 * 60, 13 * 60)
+        return datetime.utcnow() + timedelta(minutes=minutes), "Quota cooldown ~12h"
+    if kind == 'auth':
+        # Token broken — poll every 6h via watchdog cron anyway; set primary +6h too.
+        minutes = random.randint(5 * 60, 7 * 60)
+        return datetime.utcnow() + timedelta(minutes=minutes), "Token issue — retry in ~6h"
+    if kind == 'empty':
+        # No videos in queue. Poll every 6h.
+        minutes = random.randint(5 * 60, 7 * 60)
+        return datetime.utcnow() + timedelta(minutes=minutes), "Queue empty — polling"
+    # normal
+    minutes = random.randint(180, 240)
+    return datetime.utcnow() + timedelta(minutes=minutes), ""
+
+
 # ================================================================
-def main():
+def run_once():
+    """Returns a tuple (next_run_kind, remaining_count). Never raises."""
     print("=" * 60)
-    print("🤖 YOUTUBE SHORTS BOT v5.0 FINAL")
+    print("🤖 YOUTUBE SHORTS BOT v6.0 BULLETPROOF")
     print(f"🕐 {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     print("=" * 60)
 
-    # Validate required secrets
-    missing = [
-        v for v in [
-            'YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET',
-            'YOUTUBE_REFRESH_TOKEN', 'DRIVE_FOLDER_ID',
-            'GOOGLE_SERVICE_ACCOUNT',
-        ]
-        if not os.environ.get(v)
-    ]
+    missing = [v for v in [
+        'YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET',
+        'YOUTUBE_REFRESH_TOKEN', 'DRIVE_FOLDER_ID', 'GOOGLE_SERVICE_ACCOUNT',
+    ] if not os.environ.get(v)]
     if missing:
         msg = f"Missing secrets: {', '.join(missing)}"
         print(f"❌ {msg}")
         send_telegram(f"❌ Bot cannot start!\n{msg}")
-        sys.exit(1)
+        return 'auth', 0
 
-    # ── Calculate next run time ONCE (used everywhere) ──────────
-    gap_minutes  = random.randint(180, 240)
-    next_run_dt  = datetime.utcnow() + timedelta(minutes=gap_minutes)
-    next_time_str = f"{next_run_dt.hour:02d}:{next_run_dt.minute:02d}"
-    print(f"⏭️ Next run planned: {next_time_str} UTC (+{gap_minutes} min)")
+    # ── Drive auth ──
+    try:
+        drive = get_drive()
+    except Exception as e:
+        print(f"❌ Drive auth failed: {e}")
+        send_email("Drive Auth Failed", str(e))
+        send_telegram(f"❌ Drive auth failed: `{str(e)[:200]}`")
+        return 'auth', 0
 
-    # ── Init services ────────────────────────────────────────────
-    drive = get_drive()
-    yt    = get_youtube()
+    # ── YouTube auth ──
+    try:
+        yt = get_youtube()
+    except Exception as e:
+        print(f"❌ YouTube auth failed: {e}")
+        telegram_token_expired()
+        send_email("TOKEN EXPIRED", str(e))
+        return 'auth', 0
 
-    # ── Folders ──────────────────────────────────────────────────
-    pending_id   = get_or_create_folder(drive, DRIVE_FOLDER_ID, 'pending')
-    uploaded_id  = get_or_create_folder(drive, DRIVE_FOLDER_ID, 'uploaded')
-    duplicate_id = get_or_create_folder(drive, DRIVE_FOLDER_ID, 'duplicates')
+    # ── Folders ──
+    try:
+        pending_id   = get_or_create_folder(drive, DRIVE_FOLDER_ID, 'pending')
+        uploaded_id  = get_or_create_folder(drive, DRIVE_FOLDER_ID, 'uploaded')
+        duplicate_id = get_or_create_folder(drive, DRIVE_FOLDER_ID, 'duplicates')
+        failed_id    = get_or_create_folder(drive, DRIVE_FOLDER_ID, 'failed')
+    except Exception as e:
+        print(f"❌ Folder setup failed: {e}")
+        send_telegram(f"⚠️ Folder setup failed: `{str(e)[:200]}`")
+        return 'normal', 0
 
-    # ── Trends (fetch once, pass everywhere) ─────────────────────
     trending = get_trends()
 
-    # ── Find next video ──────────────────────────────────────────
     video = get_next_video(drive, pending_id)
     if not video:
         print("📭 Pending folder is empty")
         telegram_no_videos()
         send_email("No Videos Left", "Add more to Drive → pending")
-        # Still update schedule so bot keeps running
-        update_schedule(next_run_dt, 0)
-        return
+        return 'empty', 0
 
     total_pending = count_videos(drive, pending_id)
     print(f"📹 Queue: {total_pending} | Next: {video['name']}")
 
-    # ── Duplicate check ──────────────────────────────────────────
-    if is_duplicate(drive, video, uploaded_id):
-        print(f"⚠️ Duplicate: {video['name']}")
-        move_file(drive, video['id'], pending_id, duplicate_id)
-        remaining_after_dup = count_videos(drive, pending_id)
-        telegram_duplicate(video['name'], remaining_after_dup)
-        # Try scheduling and exit (next run will pick next video)
-        update_schedule(next_run_dt, remaining_after_dup)
-        return
-
-    # ── Download ─────────────────────────────────────────────────
-    t0 = time.time()
-    temp_path, file_mb = download_video(drive, video)
-
+    # ── Duplicate check ──
     try:
-        # ── Upload ───────────────────────────────────────────────
-        vid_url, title, tags, cat_name = upload_to_youtube(
-            yt, temp_path, video['name'], trending
-        )
-        upload_seconds = time.time() - t0
+        if is_duplicate(drive, video, uploaded_id):
+            print(f"⚠️ Duplicate: {video['name']}")
+            move_file(drive, video['id'], pending_id, duplicate_id,
+                      new_name=strip_retry_prefix(video['name']))
+            remaining = count_videos(drive, pending_id)
+            telegram_duplicate(video['name'], remaining)
+            return 'normal', remaining
+    except Exception as e:
+        print(f"⚠️ Duplicate check failed: {e}")
 
-        # ── Move to uploaded ─────────────────────────────────────
-        move_file(drive, video['id'], pending_id, uploaded_id)
+    retry_n = get_retry_count(video['name'])
 
-        # ── Count remaining ──────────────────────────────────────
-        remaining = count_videos(drive, pending_id)
-
-        # ── Log to Sheets ─────────────────────────────────────────
-        log_to_sheets(
-            video['name'], title, vid_url,
-            tags, trending, cat_name
-        )
-
-        # ── Print summary ────────────────────────────────────────
-        print("=" * 60)
-        print("🎉 SUCCESS!")
-        print(f"📝 {title}")
-        print(f"🔗 {vid_url}")
-        print(f"📊 Remaining: {remaining}")
-        print(f"⏭️ Next: {next_time_str} UTC")
-        print("=" * 60)
-
-        # ── Telegram success (uses SAME next_time_str) ───────────
-        telegram_success(
-            video_name     = video['name'],
-            title          = title,
-            video_url      = vid_url,
-            category       = cat_name,
-            tags           = tags,
-            remaining      = remaining,
-            trending       = trending,
-            next_schedule  = next_time_str,   # ← consistent
-            upload_seconds = upload_seconds,
-            file_size_mb   = file_mb,
-        )
-
-        # ── Self-schedule (uses SAME next_run_dt) ────────────────
-        update_schedule(next_run_dt, remaining)  # ← consistent
-
+    # ── Download ──
+    t0 = time.time()
+    try:
+        temp_path, file_mb = download_video(drive, video)
     except Exception as e:
         err = str(e)
-        print(f"❌ Upload failed: {err}")
-        telegram_error(video['name'], err)
-        send_email("Upload Failed", f"{video['name']}\n{err}")
-        sys.exit(1)
+        print(f"❌ Download failed: {err}")
+        new_n = bump_retry_prefix(drive, video)
+        if new_n >= MAX_VIDEO_RETRIES:
+            move_file(drive, video['id'], pending_id, failed_id,
+                      new_name=strip_retry_prefix(video['name']))
+            telegram_failed_permanently(video['name'])
+        else:
+            telegram_error(video['name'], err,
+                           retry_info=f"Will retry next run ({new_n}/{MAX_VIDEO_RETRIES}).")
+        send_email("Download Failed", f"{video['name']}\n{err}")
+        return 'normal', count_videos(drive, pending_id)
 
+    # ── Upload ──
+    try:
+        vid_url, title, tags, cat_name = upload_to_youtube(yt, temp_path, video['name'], trending)
+        upload_seconds = time.time() - t0
+        move_file(drive, video['id'], pending_id, uploaded_id,
+                  new_name=strip_retry_prefix(video['name']))
+        remaining = count_videos(drive, pending_id)
+        log_to_sheets(video['name'], title, vid_url, tags, trending, cat_name)
+        # Telegram + schedule are handled in main() after this returns.
+        # Stash success info on the function for main() to pick up.
+        run_once.last_success = {
+            'video_name': video['name'], 'title': title, 'video_url': vid_url,
+            'category': cat_name, 'tags': tags, 'remaining': remaining,
+            'trending': trending, 'upload_seconds': upload_seconds, 'file_size_mb': file_mb,
+        }
+        return 'normal', remaining
+    except Exception as e:
+        err = str(e)
+        kind, why = classify_error(e)
+        print(f"❌ Upload failed [{kind}]: {err}")
+        traceback.print_exc()
+
+        if kind == 'quota':
+            send_telegram(f"⏳ YouTube quota hit: `{why}`\nWaiting ~12h before retry.")
+            send_email("Quota Hit", err)
+            # Don't bump retry count — not the video's fault.
+            return 'quota', count_videos(drive, pending_id)
+
+        if kind == 'auth':
+            telegram_token_expired()
+            send_email("TOKEN EXPIRED", err)
+            return 'auth', count_videos(drive, pending_id)
+
+        # retryable / permanent → bump count, maybe move to failed/
+        new_n = bump_retry_prefix(drive, video)
+        if new_n >= MAX_VIDEO_RETRIES or kind == 'permanent':
+            move_file(drive, video['id'], pending_id, failed_id,
+                      new_name=strip_retry_prefix(video['name']))
+            telegram_failed_permanently(video['name'])
+            send_email("Video Given Up", f"{video['name']}\n{err}")
+        else:
+            telegram_error(video['name'], err,
+                           retry_info=f"Will retry next run ({new_n}/{MAX_VIDEO_RETRIES}).")
+            send_email("Upload Failed", f"{video['name']}\n{err}")
+        return 'normal', count_videos(drive, pending_id)
     finally:
-        # Always clean temp file
         try:
             os.unlink(temp_path)
             print("🧹 Temp cleaned")
-        except:
+        except Exception:
             pass
 
 
 # ================================================================
-# ENTRY POINT
+def main():
+    kind, remaining = 'normal', 0
+    try:
+        kind, remaining = run_once()
+    except Exception as e:
+        # Absolute last-resort safety net — should not normally fire,
+        # since run_once() swallows everything.
+        print(f"💥 Unexpected top-level error: {e}")
+        traceback.print_exc()
+        send_telegram(f"💥 Bot crashed unexpectedly: `{str(e)[:200]}`\nWill auto-retry in ~3h.")
+        kind = 'normal'
+
+    # ── ALWAYS reschedule, no matter what happened ──
+    next_run_dt, note = pick_next_run(kind)
+
+    success = getattr(run_once, 'last_success', None)
+    if success:
+        next_time_str = f"{next_run_dt.hour:02d}:{next_run_dt.minute:02d}"
+        telegram_success(
+            next_schedule=next_time_str,
+            **{k: v for k, v in success.items()},
+        )
+
+    update_schedule(next_run_dt, remaining, note=note)
+    print("✅ Run finished cleanly.")
+
+
 # ================================================================
 if __name__ == '__main__':
     main()

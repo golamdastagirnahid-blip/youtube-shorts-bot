@@ -2,16 +2,24 @@ name: YouTube Shorts Uploader
 
 on:
   schedule:
+    # Primary cron — rewritten by uploader.py after every run (self-scheduling).
     - cron: '44 15 * * *'
+    # Watchdog cron — fires every 6h regardless. If self-reschedule ever
+    # breaks (GitHub API down, token issue, etc.) the bot still wakes up.
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: youtube-shorts-uploader
+  cancel-in-progress: false
+
 jobs:
   upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -28,18 +36,64 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run uploader
+        id: run_uploader
         env:
-          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_ID:     ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+          DRIVE_FOLDER_ID:       ${{ secrets.DRIVE_FOLDER_ID }}
           GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
-          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
-          ALERT_APP_PASSWORD: ${{ secrets.ALERT_APP_PASSWORD }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          ALERT_EMAIL:           ${{ secrets.ALERT_EMAIL }}
+          ALERT_APP_PASSWORD:    ${{ secrets.ALERT_APP_PASSWORD }}
+          GROQ_API_KEY:          ${{ secrets.GROQ_API_KEY }}
+          SPREADSHEET_ID:        ${{ secrets.SPREADSHEET_ID }}
+          TELEGRAM_BOT_TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:      ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_TOKEN:              ${{ secrets.GH_TOKEN }}
+          GITHUB_REPOSITORY:     ${{ github.repository }}
         run: python uploader.py
+
+      - name: Emergency reschedule (only if uploader crashed before self-rescheduling)
+        if: failure()
+        env:
+          GH_TOKEN:          ${{ secrets.GH_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import os, json, base64, re, random, urllib.request, urllib.parse
+          from datetime import datetime, timedelta
+          token = os.environ.get('GH_TOKEN'); repo = os.environ.get('GITHUB_REPOSITORY')
+          if not token or not repo:
+              print('No GH_TOKEN/REPO — skip'); raise SystemExit(0)
+          minutes = random.randint(180, 240)
+          dt = datetime.utcnow() + timedelta(minutes=minutes)
+          new_cron = f"{dt.minute} {dt.hour} * * *"
+          path = '.github/workflows/upload.yml'
+          url  = f'https://api.github.com/repos/{repo}/contents/{path}'
+          headers = {'Authorization': f'token {token}',
+                     'Accept': 'application/vnd.github.v3+json',
+                     'Content-Type': 'application/json'}
+          req = urllib.request.Request(url, headers=headers)
+          with urllib.request.urlopen(req, timeout=30) as r:
+              data = json.loads(r.read().decode())
+              sha = data['sha']
+              content = base64.b64decode(data['content']).decode('utf-8')
+          updated = re.sub(r"cron: '[^']*'", f"cron: '{new_cron}'", content, count=1)
+          if updated != content:
+              payload = json.dumps({
+                  'message': f'🛟 Emergency reschedule: {dt.hour:02d}:{dt.minute:02d} UTC',
+                  'content': base64.b64encode(updated.encode()).decode(),
+                  'sha': sha,
+              }).encode()
+              req2 = urllib.request.Request(url, data=payload, headers=headers, method='PUT')
+              urllib.request.urlopen(req2, timeout=30)
+              print(f'✅ Emergency cron set → {new_cron}')
+          tg_token = os.environ.get('TELEGRAM_BOT_TOKEN'); tg_chat = os.environ.get('TELEGRAM_CHAT_ID')
+          if tg_token and tg_chat:
+              msg = f'🛟 Emergency reschedule fired. Next run: {dt.hour:02d}:{dt.minute:02d} UTC'
+              tg_url = f'https://api.telegram.org/bot{tg_token}/sendMessage?chat_id={tg_chat}&text={urllib.parse.quote(msg)}'
+              try: urllib.request.urlopen(tg_url, timeout=15)
+              except Exception as e: print(f'TG fail: {e}')
+          PY
