@@ -3,7 +3,7 @@ name: YouTube Shorts Uploader
 on:
   schedule:
     # Primary cron — rewritten by uploader.py after every run (self-scheduling).
-    - cron: '23 20 * * *'
+    - cron: '38 22 * * *'
     # Watchdog cron — fires every 6h regardless. If self-reschedule ever
     # breaks (GitHub API down, token issue, etc.) the bot still wakes up.
     - cron: '17 */6 * * *'
