@@ -319,8 +319,7 @@ def update_schedule(next_run_dt, remaining, note=""):
             sha     = data['sha']
             content = base64.b64decode(data['content']).decode('utf-8')
 
-        # Replace ONLY the first cron line (the primary schedule).
-        # The watchdog cron (every 6h) further down in the file is preserved.
+        # Replace the (single) primary cron line.
         updated = re.sub(r"cron: '[^']*'", f"cron: '{new_cron}'", content, count=1)
 
         if updated == content:
@@ -340,8 +339,10 @@ def update_schedule(next_run_dt, remaining, note=""):
         return True
     except Exception as e:
         print(f"❌ Schedule update failed: {e}")
-        send_telegram(f"⚠️ Self-reschedule failed: `{str(e)[:200]}`\nWatchdog cron (every 6h) will still trigger bot.")
-        return False
+        send_telegram(f"⚠️ Self-reschedule failed: `{str(e)[:200]}`\nFailing job so workflow's emergency reschedule step takes over.")
+        # Re-raise so main() exits non-zero → workflow `if: failure()` step
+        # rewrites cron to ~24h from now (otherwise bot would never wake again).
+        raise
 
 
 # ================================================================
@@ -777,7 +778,7 @@ def pick_next_run(kind='normal'):
         minutes = random.randint(11 * 60, 13 * 60)
         return datetime.utcnow() + timedelta(minutes=minutes), "Quota cooldown ~12h"
     if kind == 'auth':
-        # Token broken — poll every 6h via watchdog cron anyway; set primary +6h too.
+        # Token broken — retry in ~6h so user has a chance to refresh it.
         minutes = random.randint(5 * 60, 7 * 60)
         return datetime.utcnow() + timedelta(minutes=minutes), "Token issue — retry in ~6h"
     if kind == 'empty':
@@ -944,7 +945,7 @@ def main():
         # since run_once() swallows everything.
         print(f"💥 Unexpected top-level error: {e}")
         traceback.print_exc()
-        send_telegram(f"💥 Bot crashed unexpectedly: `{str(e)[:200]}`\nWill auto-retry in ~3h.")
+        send_telegram(f"💥 Bot crashed unexpectedly: `{str(e)[:200]}`\nWill auto-retry in ~24h.")
         kind = 'normal'
 
     # ── ALWAYS reschedule, no matter what happened ──
