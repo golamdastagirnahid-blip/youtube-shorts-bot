@@ -3,10 +3,8 @@ name: YouTube Shorts Uploader
 on:
   schedule:
     # Primary cron — rewritten by uploader.py after every run (self-scheduling).
+    # Target cadence: 1 upload per ~24h at a random time-of-day (humanized).
     - cron: '17 8 * * *'
-    # Watchdog cron — fires every 6h regardless. If self-reschedule ever
-    # breaks (GitHub API down, token issue, etc.) the bot still wakes up.
-    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -67,7 +65,7 @@ jobs:
           token = os.environ.get('GH_TOKEN'); repo = os.environ.get('GITHUB_REPOSITORY')
           if not token or not repo:
               print('No GH_TOKEN/REPO — skip'); raise SystemExit(0)
-          minutes = random.randint(180, 240)
+          minutes = random.randint(20 * 60, 28 * 60)
           dt = datetime.utcnow() + timedelta(minutes=minutes)
           new_cron = f"{dt.minute} {dt.hour} * * *"
           path = '.github/workflows/upload.yml'

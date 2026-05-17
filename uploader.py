@@ -781,12 +781,13 @@ def pick_next_run(kind='normal'):
         minutes = random.randint(5 * 60, 7 * 60)
         return datetime.utcnow() + timedelta(minutes=minutes), "Token issue — retry in ~6h"
     if kind == 'empty':
-        # No videos in queue. Poll every 6h.
-        minutes = random.randint(5 * 60, 7 * 60)
-        return datetime.utcnow() + timedelta(minutes=minutes), "Queue empty — polling"
-    # normal
-    minutes = random.randint(180, 240)
-    return datetime.utcnow() + timedelta(minutes=minutes), ""
+        # No videos in queue. Poll once a day.
+        minutes = random.randint(22 * 60, 26 * 60)
+        return datetime.utcnow() + timedelta(minutes=minutes), "Queue empty — polling in ~24h"
+    # normal — 1 upload per ~24h, randomized across the full day so the
+    # time-of-day shifts every cycle (humanized, anti-spam pacing).
+    minutes = random.randint(20 * 60, 28 * 60)
+    return datetime.utcnow() + timedelta(minutes=minutes), "1/day humanized pacing"
 
 
 # ================================================================
