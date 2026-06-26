@@ -4,7 +4,7 @@ on:
   schedule:
     # Primary cron — rewritten by uploader.py after every run (self-scheduling).
     # Target cadence: 1 upload per ~24h at a random time-of-day (humanized).
-    - cron: '6 5 * * *'
+    - cron: '2 8 * * *'
   workflow_dispatch:
 
 permissions:
